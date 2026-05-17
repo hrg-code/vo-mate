@@ -16,6 +16,8 @@ export type ScriptBlock = {
   label: string;
   voiceover: string;
   visualHint?: string;
+  startSeconds?: number;
+  endSeconds?: number;
   durationSeconds?: number;
 };
 

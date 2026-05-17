@@ -512,7 +512,17 @@ published | needs_review | script_reusable | seo_opportunity
     "sourceType": "ai_initial",
     "generationId": "gen_xxx",
     "status": "candidate",
-    "body": "脚本正文"
+    "body": "脚本正文",
+    "blocks": [
+      {
+        "id": "sb_hook_xxx",
+        "role": "hook",
+        "label": "开头钩子",
+        "voiceover": "前 3 秒口播正文",
+        "visualHint": "正面半身，第一句直接看镜头。",
+        "durationSeconds": 5
+      }
+    ]
   },
   "versions": []
 }
@@ -521,6 +531,7 @@ published | needs_review | script_reusable | seo_opportunity
 ### POST /api/v1/scripts
 
 说明：从选题或手动主题创建脚本草稿，并创建 `v1 AI 初稿`。该接口会调用现有 AI Provider 的脚本生成能力，并记录 `ai_generations` 审计记录。
+响应中的 `body` 是兼容文本镜像，结构化脚本以 `blocks` 为准。
 
 请求体：
 
@@ -543,6 +554,16 @@ published | needs_review | script_reusable | seo_opportunity
 ```json
 {
   "body": "用户修改后的脚本正文",
+  "blocks": [
+    {
+      "id": "sb_hook_xxx",
+      "role": "hook",
+      "label": "开头钩子",
+      "voiceover": "用户修改后的开头口播",
+      "visualHint": "正面半身，第一句直接看镜头。",
+      "durationSeconds": 5
+    }
+  ],
   "label": "v2 用户修改",
   "sourceType": "user_save",
   "parentVersionId": "sv_parent"

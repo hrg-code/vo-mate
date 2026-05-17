@@ -23,6 +23,7 @@ from app.repositories.topic_idea_repository import topic_idea_repository
 from app.schemas.common import CollectorImportRequest, ContentItem, ContentStatus, Platform, ScriptDraftCreateRequest, ScriptDraftVersionCreateRequest, TopicIdeaGenerateRequest
 from app.services.content_ingestion_service import ContentIngestionService, DouyinRawAdapter
 from app.services.content_vector_service import ContentVectorService
+from app.services.script_draft_service import ScriptDraftService
 from app.services.topic_content_rerank_service import TopicContentRerankService
 from app.services.ai_provider_service import DashScopeEmbeddingProvider, DeepSeekChatProvider, MockChatProvider, MockEmbeddingProvider
 
@@ -1481,7 +1482,8 @@ def test_ai_generation_not_found() -> None:
 
 def test_create_script_draft_generates_initial_version(monkeypatch) -> None:
     monkeypatch.setattr("app.repositories.script_draft_repository.get_settings", lambda: Settings(postgres_host=""))
-    monkeypatch.setattr("app.repositories.script_draft_repository.ai_provider_service.get_chat_provider", lambda: MockChatProvider())
+    monkeypatch.setattr("app.services.script_draft_service.get_settings", lambda: Settings(postgres_host=""))
+    monkeypatch.setattr("app.services.script_draft_service.ai_provider_service.get_chat_provider", lambda: MockChatProvider())
 
     response = client.post(
         "/api/v1/scripts",
@@ -1495,6 +1497,9 @@ def test_create_script_draft_generates_initial_version(monkeypatch) -> None:
     assert payload["versions"][0]["sourceType"] == "ai_initial"
     assert payload["versions"][0]["generationId"].startswith("gen_")
     assert payload["versions"][0]["body"].strip()
+    assert payload["versions"][0]["blocks"]
+    assert len(payload["versions"][0]["blocks"]) >= 4
+    assert payload["versions"][0]["blocks"][0]["role"] == "hook"
 
     generation_response = client.get(f"/api/v1/ai/generations/{payload['versions'][0]['generationId']}")
     assert generation_response.status_code == 200
@@ -1511,12 +1516,15 @@ def test_create_script_draft_accepts_top_level_script_body(monkeypatch) -> None:
             }
 
     monkeypatch.setattr("app.repositories.script_draft_repository.get_settings", lambda: Settings(postgres_host=""))
-    monkeypatch.setattr("app.repositories.script_draft_repository.ai_provider_service.get_chat_provider", lambda: TopLevelScriptProvider())
+    monkeypatch.setattr("app.services.script_draft_service.get_settings", lambda: Settings(postgres_host=""))
+    monkeypatch.setattr("app.services.script_draft_service.ai_provider_service.get_chat_provider", lambda: TopLevelScriptProvider())
 
-    payload = ScriptDraftRepository().create_draft(ScriptDraftCreateRequest(topic="真实 provider 返回结构"))
+    payload = ScriptDraftService(ScriptDraftRepository()).create_ai_initial_draft(ScriptDraftCreateRequest(topic="真实 provider 返回结构"))
 
     assert payload["currentVersion"]["body"].startswith("开头：这是顶层脚本文本")
     assert payload["currentVersion"]["titleCandidates"] == [{"text": "顶层标题"}]
+    assert len(payload["currentVersion"]["blocks"]) == 2
+    assert payload["currentVersion"]["blocks"][0]["voiceover"].startswith("这是顶层脚本文本")
 
 
 def test_create_script_draft_falls_back_when_provider_omits_body(monkeypatch) -> None:
@@ -1525,15 +1533,21 @@ def test_create_script_draft_falls_back_when_provider_omits_body(monkeypatch) ->
             return {"drafts": {"titles": [{"text": "只有标题"}]}}
 
     monkeypatch.setattr("app.repositories.script_draft_repository.get_settings", lambda: Settings(postgres_host=""))
-    monkeypatch.setattr("app.repositories.script_draft_repository.ai_provider_service.get_chat_provider", lambda: EmptyScriptProvider())
+    monkeypatch.setattr("app.services.script_draft_service.get_settings", lambda: Settings(postgres_host=""))
+    monkeypatch.setattr("app.services.script_draft_service.ai_provider_service.get_chat_provider", lambda: EmptyScriptProvider())
 
-    payload = ScriptDraftRepository().create_draft(ScriptDraftCreateRequest(topic="选题转脚本兜底"))
+    payload = ScriptDraftService(ScriptDraftRepository()).create_ai_initial_draft(ScriptDraftCreateRequest(topic="选题转脚本兜底"))
 
     assert "选题转脚本兜底" in payload["currentVersion"]["body"]
     assert payload["currentVersion"]["body"].strip()
+    assert payload["currentVersion"]["blocks"]
 
 
-def test_save_script_version_and_adopt() -> None:
+def test_save_script_version_and_adopt(monkeypatch) -> None:
+    monkeypatch.setattr("app.repositories.script_draft_repository.get_settings", lambda: Settings(postgres_host=""))
+    monkeypatch.setattr("app.services.script_draft_service.get_settings", lambda: Settings(postgres_host=""))
+    monkeypatch.setattr("app.services.script_draft_service.ai_provider_service.get_chat_provider", lambda: MockChatProvider())
+
     created = client.post("/api/v1/scripts", json={"topic": "35 岁程序员岗位切换", "platform": "douyin"}).json()
     parent_version_id = created["currentVersionId"]
 
@@ -1541,6 +1555,16 @@ def test_save_script_version_and_adopt() -> None:
         f"/api/v1/scripts/{created['id']}/versions",
         json={
             "body": "用户修改后的脚本正文",
+            "blocks": [
+                {
+                    "id": "sb_test_hook",
+                    "role": "hook",
+                    "label": "开头钩子",
+                    "voiceover": "用户修改后的脚本正文",
+                    "visualHint": "正面半身，第一句直接看镜头。",
+                    "durationSeconds": 5,
+                }
+            ],
             "label": "v2 用户修改",
             "sourceType": "user_save",
             "parentVersionId": parent_version_id,
@@ -1549,6 +1573,7 @@ def test_save_script_version_and_adopt() -> None:
     assert saved.status_code == 200
     payload = saved.json()
     assert payload["currentVersion"]["body"] == "用户修改后的脚本正文"
+    assert payload["currentVersion"]["blocks"][0]["id"] == "sb_test_hook"
     assert payload["currentVersion"]["versionNo"] == 2
     assert payload["currentVersion"]["parentVersionId"] == parent_version_id
 
@@ -1575,8 +1600,49 @@ def test_script_repository_sqlite_persistence(monkeypatch) -> None:
     monkeypatch.setattr("app.repositories.script_draft_repository.get_admin_engine", lambda: engine)
 
     repo = ScriptDraftRepository()
-    draft = repo.create_draft(ScriptDraftCreateRequest(topic="SQLite 持久化脚本版本", platform="douyin"))
+    draft = repo.create_draft_with_initial_version(
+        draft={
+            "id": "scr_sqlite",
+            "workspaceId": "ws_northstar",
+            "topicIdeaId": None,
+            "title": "SQLite 持久化脚本版本",
+            "body": "第一版正文",
+            "platform": "douyin",
+            "status": "draft",
+            "currentVersionId": "sv_sqlite_1",
+            "adoptedVersionId": None,
+        },
+        version={
+            "id": "sv_sqlite_1",
+            "draftId": "scr_sqlite",
+            "versionNo": 1,
+            "label": "v1 AI 初稿",
+            "platform": "douyin",
+            "durationSeconds": 60,
+            "body": "第一版正文",
+            "blocks": [
+                {
+                    "id": "sb_sqlite_hook",
+                    "role": "hook",
+                    "label": "开头钩子",
+                    "voiceover": "第一版正文",
+                    "visualHint": "正面半身，第一句直接看镜头。",
+                    "durationSeconds": 60,
+                }
+            ],
+            "description": None,
+            "tags": [],
+            "titleCandidates": [],
+            "sourceType": "ai_initial",
+            "parentVersionId": None,
+            "generationId": "gen_sqlite",
+            "status": "candidate",
+        },
+        generation_id="gen_sqlite",
+        generated={},
+    )
     assert draft["versions"][0]["versionNo"] == 1
+    assert draft["versions"][0]["blocks"][0]["id"] == "sb_sqlite_hook"
     assert repo.get_draft(draft["id"]) is not None
     assert repo.create_version(draft["id"], ScriptDraftVersionCreateRequest(body="第二版正文")) is not None
 
@@ -1649,7 +1715,12 @@ def test_sqladmin_role_permissions() -> None:
     assert admin_role_permissions("unknown")["can_export"] is True
 
 
-def test_agent_topic_workbench_run_and_debug_contract() -> None:
+def test_agent_topic_workbench_run_and_debug_contract(monkeypatch) -> None:
+    mock_provider = MockChatProvider()
+    monkeypatch.setattr("app.agents.chains.strategy_chain.strategy_chain.chat_provider", mock_provider)
+    monkeypatch.setattr("app.agents.chains.script_chain.script_chain.chat_provider", mock_provider)
+    monkeypatch.setattr("app.agents.chains.qa_chain.qa_chain.chat_provider", mock_provider)
+
     response = client.post(
         "/api/v1/agent/topic-workbench/run",
         json={

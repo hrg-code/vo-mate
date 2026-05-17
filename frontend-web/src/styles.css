@@ -1069,6 +1069,12 @@ tr:last-child td {
   line-height: 1.2;
 }
 
+.time-range-input {
+  max-width: 96px;
+  color: var(--text);
+  font-weight: 800;
+}
+
 .production-time .ant-select {
   width: 100%;
 }

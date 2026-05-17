@@ -32,6 +32,7 @@ create table if not exists script_draft_versions (
   platform varchar(32),
   duration_seconds integer,
   body text not null default '',
+  blocks jsonb not null default '[]'::jsonb,
   description text,
   tags jsonb not null default '[]'::jsonb,
   title_candidates jsonb not null default '[]'::jsonb,
@@ -42,6 +43,8 @@ create table if not exists script_draft_versions (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table script_draft_versions add column if not exists blocks jsonb not null default '[]'::jsonb;
 
 create index if not exists ix_script_draft_versions_draft_id on script_draft_versions (draft_id);
 create index if not exists ix_script_draft_versions_source_type on script_draft_versions (source_type);

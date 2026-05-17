@@ -41,6 +41,30 @@ class ScriptVersionStatus(str, Enum):
     discarded = "discarded"
 
 
+class ScriptBlockRole(str, Enum):
+    hook = "hook"
+    pain = "pain"
+    point = "point"
+    proof = "proof"
+    method = "method"
+    turn = "turn"
+    summary = "summary"
+    cta = "cta"
+
+
+class ScriptBlock(BaseModel):
+    id: str
+    role: ScriptBlockRole
+    label: str
+    voiceover: str
+    visual_hint: Optional[str] = Field(default=None, serialization_alias="visualHint", validation_alias="visualHint")
+    start_seconds: Optional[float] = Field(default=None, serialization_alias="startSeconds", validation_alias="startSeconds")
+    end_seconds: Optional[float] = Field(default=None, serialization_alias="endSeconds", validation_alias="endSeconds")
+    duration_seconds: Optional[float] = Field(default=None, serialization_alias="durationSeconds", validation_alias="durationSeconds")
+
+    model_config = {"populate_by_name": True}
+
+
 class WorkspaceContext(BaseModel):
     workspace_id: str = Field(serialization_alias="workspaceId")
     workspace_name: str = Field(serialization_alias="workspaceName")
@@ -181,6 +205,7 @@ class ScriptDraftVersion(BaseModel):
     platform: Optional[Platform] = None
     duration_seconds: Optional[int] = Field(default=None, serialization_alias="durationSeconds", validation_alias="durationSeconds")
     body: str
+    blocks: List[ScriptBlock] = Field(default_factory=list)
     description: Optional[str] = None
     tags: List[str] = Field(default_factory=list)
     title_candidates: List[Dict[str, Any]] = Field(default_factory=list, serialization_alias="titleCandidates", validation_alias="titleCandidates")
@@ -234,6 +259,7 @@ class ScriptDraftCreateRequest(BaseModel):
 
 class ScriptDraftVersionCreateRequest(BaseModel):
     body: str = Field(min_length=1)
+    blocks: List[ScriptBlock] = Field(default_factory=list)
     label: Optional[str] = None
     platform: Optional[Platform] = None
     duration_seconds: Optional[int] = Field(default=None, ge=1, le=600, serialization_alias="durationSeconds", validation_alias="durationSeconds")

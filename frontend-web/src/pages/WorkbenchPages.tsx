@@ -301,7 +301,7 @@ export function ScriptsPage({
   };
 
   const handleAddBlock = () => {
-    setScriptBlocks((current) => [...current, createScriptBlock("point")]);
+    setScriptBlocks((current) => [...current, createScriptBlock("point", { durationSeconds: defaultBlockDurationSeconds })]);
   };
 
   const handleUpdateBlock = (blockId: string, patch: Partial<ScriptBlock>) => {
@@ -566,7 +566,16 @@ function ScriptProductionSheet({
         {blocks.map((block, index) => (
           <article className="production-script-row" key={block.id}>
             <div className="production-time">
-              <strong>{timeRangeForBlock(blocks, index)}</strong>
+              <TimeRangeInput
+                range={timeRangeForBlock(blocks, index)}
+                onCommit={(range) =>
+                  onUpdateBlock(block.id, {
+                    startSeconds: range.startSeconds,
+                    endSeconds: range.endSeconds,
+                    durationSeconds: range.endSeconds - range.startSeconds
+                  })
+                }
+              />
               <Select
                 aria-label="脚本段落类型"
                 options={scriptBlockRoleOptions.map((option) => ({ value: option.role, label: productionRoleLabel[option.role] }))}
@@ -664,6 +673,41 @@ function ProductionAssetRow({
   );
 }
 
+function TimeRangeInput({
+  range,
+  onCommit
+}: {
+  range: TimeRange;
+  onCommit: (range: TimeRange) => void;
+}) {
+  const formattedRange = formatTimeRange(range);
+  const [value, setValue] = useState(formattedRange);
+
+  useEffect(() => {
+    setValue(formattedRange);
+  }, [formattedRange]);
+
+  const commit = () => {
+    const nextRange = parseTimeRange(value);
+    if (!nextRange) {
+      setValue(formattedRange);
+      return;
+    }
+    onCommit(nextRange);
+  };
+
+  return (
+    <Input
+      aria-label="口播时间段"
+      className="time-range-input"
+      value={value}
+      onBlur={commit}
+      onChange={(event) => setValue(event.target.value)}
+      onPressEnter={commit}
+    />
+  );
+}
+
 const productionRoleLabel: Record<ScriptBlockRole, string> = {
   hook: "开头钩子",
   pain: "痛点共鸣",
@@ -692,11 +736,48 @@ function nearestDurationOption(duration: number) {
   return 90;
 }
 
-function timeRangeForBlock(blocks: ScriptBlock[], index: number) {
-  const start = blocks.slice(0, index).reduce((sum, block) => sum + (block.durationSeconds ?? 0), 0);
-  const current = blocks[index]?.durationSeconds ?? 0;
-  if (current <= 0) return "未估时";
-  return `${start}-${start + current}s`;
+type TimeRange = {
+  startSeconds: number;
+  endSeconds: number;
+};
+
+function timeRangeForBlock(blocks: ScriptBlock[], index: number): TimeRange {
+  const block = blocks[index];
+  if (typeof block?.startSeconds === "number" && typeof block.endSeconds === "number" && block.endSeconds > block.startSeconds) {
+    return {
+      startSeconds: block.startSeconds,
+      endSeconds: block.endSeconds
+    };
+  }
+  const start = blocks.slice(0, index).reduce((sum, block) => sum + resolveBlockDuration(block), 0);
+  const current = resolveBlockDuration(blocks[index]);
+  return {
+    startSeconds: start,
+    endSeconds: start + current
+  };
+}
+
+function resolveBlockDuration(block: ScriptBlock | undefined) {
+  return Math.max(1, block?.durationSeconds ?? defaultBlockDurationSeconds);
+}
+
+const defaultBlockDurationSeconds = 12;
+
+function formatTimeRange(range: TimeRange) {
+  return `${formatSeconds(range.startSeconds)}-${formatSeconds(range.endSeconds)}`;
+}
+
+function formatSeconds(seconds: number) {
+  return `${Math.max(0, Math.round(seconds))}s`;
+}
+
+function parseTimeRange(value: string): TimeRange | null {
+  const match = value.trim().match(/^(\d+(?:\.\d+)?)\s*s?\s*[-~—到至]\s*(\d+(?:\.\d+)?)\s*s?$/);
+  if (!match) return null;
+  const startSeconds = Math.max(0, Math.round(Number(match[1])));
+  const endSeconds = Math.max(0, Math.round(Number(match[2])));
+  if (!Number.isFinite(startSeconds) || !Number.isFinite(endSeconds) || endSeconds <= startSeconds) return null;
+  return { startSeconds, endSeconds };
 }
 
 function readCandidateText(candidate: Record<string, unknown> | undefined) {

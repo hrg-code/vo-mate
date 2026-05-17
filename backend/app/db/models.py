@@ -224,6 +224,7 @@ class ScriptDraftVersion(Base, TimestampMixin):
     platform: Mapped[Optional[str]] = mapped_column(String(32))
     duration_seconds: Mapped[Optional[int]] = mapped_column(Integer)
     body: Mapped[str] = mapped_column(Text, default="")
+    blocks: Mapped[list] = mapped_column(JSON, default=list)
     description: Mapped[Optional[str]] = mapped_column(Text)
     tags: Mapped[list] = mapped_column(JSON, default=list)
     title_candidates: Mapped[list] = mapped_column(JSON, default=list)

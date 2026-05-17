@@ -102,6 +102,8 @@ export function serializeScriptBlocks(blocks: ScriptBlock[]): string {
       label: block.label,
       voiceover: block.voiceover,
       visualHint: block.visualHint ?? "",
+      startSeconds: block.startSeconds ?? null,
+      endSeconds: block.endSeconds ?? null,
       durationSeconds: block.durationSeconds ?? null
     }))
   );

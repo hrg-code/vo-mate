@@ -11,6 +11,7 @@ from app.schemas.common import (
     ScriptDraftVersionCreateRequest,
     ScriptVersionStatusUpdateRequest,
 )
+from app.services.script_draft_service import script_draft_service
 
 router = APIRouter(prefix="/scripts", tags=["scripts"])
 
@@ -30,7 +31,7 @@ def get_script_draft(draft_id: str) -> ScriptDraftDetail:
 # 生成话题脚本草稿
 @router.post("", response_model=ScriptDraftDetail)
 def create_script_draft(payload: ScriptDraftCreateRequest) -> ScriptDraftDetail:
-    return ScriptDraftDetail(**script_draft_repository.create_draft(payload))
+    return ScriptDraftDetail(**script_draft_service.create_ai_initial_draft(payload))
 
 
 @router.post("/{draft_id}/versions", response_model=ScriptDraftDetail)

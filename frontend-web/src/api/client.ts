@@ -202,8 +202,7 @@ export const api = {
   },
   createScriptVersion: (draftId: string, payload: ScriptDraftVersionCreateRequest): Promise<ScriptDraft> => {
     if (!USE_MOCKS) {
-      const { blocks: _blocks, ...requestPayload } = payload;
-      return request<ScriptDraft>(`/scripts/${draftId}/versions`, { method: "POST", body: JSON.stringify(requestPayload) });
+      return request<ScriptDraft>(`/scripts/${draftId}/versions`, { method: "POST", body: JSON.stringify(payload) });
     }
     const draft = mockScriptDrafts.find((item) => item.id === draftId);
     if (!draft) return Promise.reject(new Error("Script draft not found"));
