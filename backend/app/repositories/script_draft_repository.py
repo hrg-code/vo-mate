@@ -61,6 +61,31 @@ class ScriptDraftRepository:
         payload["versions"] = list(self.memory_versions.get(draft_id, []))
         return payload
 
+    def find_draft_for_topic(self, workspace_id: str, topic_idea_id: Optional[str], topic: str) -> Optional[Dict[str, Any]]:
+        normalized_topic = topic.strip().lower()
+        with self._session() as session:
+            if session is not None:
+                try:
+                    query = session.query(ScriptDraftModel).filter(ScriptDraftModel.workspace_id == workspace_id)
+                    if topic_idea_id:
+                        row = query.filter(ScriptDraftModel.topic_idea_id == topic_idea_id).order_by(ScriptDraftModel.updated_at.desc()).first()
+                    else:
+                        row = query.filter(ScriptDraftModel.topic_idea_id.is_(None), ScriptDraftModel.topic.ilike(normalized_topic)).order_by(ScriptDraftModel.updated_at.desc()).first()
+                    if row is None:
+                        return None
+                    return self.get_draft(row.id)
+                except SQLAlchemyError:
+                    session.rollback()
+
+        for draft in self.memory_drafts.values():
+            if draft.get("workspaceId") != workspace_id:
+                continue
+            if topic_idea_id and draft.get("topicIdeaId") == topic_idea_id:
+                return self.get_draft(draft["id"])
+            if not topic_idea_id and not draft.get("topicIdeaId") and str(draft.get("topic") or "").strip().lower() == normalized_topic:
+                return self.get_draft(draft["id"])
+        return None
+
     def create_draft_with_initial_version(
         self,
         draft: Dict[str, Any],
@@ -279,6 +304,7 @@ class ScriptDraftRepository:
             "id": row.id,
             "workspaceId": row.workspace_id,
             "topicIdeaId": row.topic_idea_id,
+            "topic": row.topic,
             "title": row.title,
             "body": row.body,
             "platform": row.platform,
@@ -314,6 +340,7 @@ class ScriptDraftRepository:
             id=payload["id"],
             workspace_id=payload["workspaceId"],
             topic_idea_id=payload.get("topicIdeaId"),
+            topic=payload.get("topic"),
             title=payload["title"],
             body=payload.get("body"),
             platform=payload.get("platform"),

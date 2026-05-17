@@ -206,6 +206,7 @@ class ScriptDraft(Base, TimestampMixin):
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     workspace_id: Mapped[str] = mapped_column(String(64), index=True)
     topic_idea_id: Mapped[Optional[str]] = mapped_column(String(64), index=True)
+    topic: Mapped[Optional[str]] = mapped_column(String(500), index=True)
     title: Mapped[str] = mapped_column(String(500), nullable=False)
     body: Mapped[Optional[str]] = mapped_column(Text)
     platform: Mapped[Optional[str]] = mapped_column(String(32))

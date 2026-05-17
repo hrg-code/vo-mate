@@ -185,6 +185,7 @@ export type ScriptDraft = {
   id: string;
   workspaceId: string;
   topicIdeaId?: string;
+  topic?: string;
   title: string;
   body?: string;
   platform?: Platform;

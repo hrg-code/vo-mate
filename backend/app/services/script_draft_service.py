@@ -18,6 +18,11 @@ class ScriptDraftService:
         self.draft_repository = draft_repository
 
     def create_ai_initial_draft(self, request: ScriptDraftCreateRequest) -> Dict[str, Any]:
+        topic = request.topic.strip()
+        existing = self.draft_repository.find_draft_for_topic(request.workspace_id, request.topic_idea_id, topic)
+        if existing is not None:
+            return existing
+
         draft_id = f"scr_{uuid4().hex[:10]}"
         version_id = f"sv_{uuid4().hex[:10]}"
         generation_id = f"gen_{uuid4().hex[:10]}"
@@ -38,9 +43,9 @@ class ScriptDraftService:
             generated = ai_provider_service.get_chat_provider().generate_json(
                 task="script",
                 system_prompt="你是短视频口播脚本生成 Agent，请输出标题候选、简介、标签和脚本文本 JSON。",
-                user_input=request.topic,
+                user_input=topic,
                 context={
-                    "topic": request.topic,
+                    "topic": topic,
                     "platform": request.platform.value,
                     "durationSeconds": request.duration_seconds,
                     "topicIdeaId": request.topic_idea_id,
@@ -55,7 +60,8 @@ class ScriptDraftService:
                 "id": draft_id,
                 "workspaceId": request.workspace_id,
                 "topicIdeaId": request.topic_idea_id,
-                "title": request.title or self._first_title(title_candidates) or request.topic,
+                "topic": topic,
+                "title": request.title or self._first_title(title_candidates) or topic,
                 "body": body,
                 "platform": request.platform.value,
                 "status": "draft",

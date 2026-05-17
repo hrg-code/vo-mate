@@ -1506,6 +1506,53 @@ def test_create_script_draft_generates_initial_version(monkeypatch) -> None:
     assert generation_response.json()["workflow"] == "script"
 
 
+def test_create_script_draft_is_idempotent_for_topic_idea(monkeypatch) -> None:
+    class CountingScriptProvider(MockChatProvider):
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def generate_json(self, *args, **kwargs):
+            self.calls += 1
+            return super().generate_json(*args, **kwargs)
+
+    provider = CountingScriptProvider()
+    monkeypatch.setattr("app.repositories.script_draft_repository.get_settings", lambda: Settings(postgres_host=""))
+    monkeypatch.setattr("app.services.script_draft_service.get_settings", lambda: Settings(postgres_host=""))
+    monkeypatch.setattr("app.services.script_draft_service.ai_provider_service.get_chat_provider", lambda: provider)
+
+    payload = {"topicIdeaId": "tp_idempotent_script", "topic": "唯一选题生成脚本", "platform": "douyin"}
+    first = client.post("/api/v1/scripts", json=payload)
+    second = client.post("/api/v1/scripts", json=payload)
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert second.json()["id"] == first.json()["id"]
+    assert provider.calls == 1
+
+
+def test_create_script_draft_is_idempotent_for_manual_topic(monkeypatch) -> None:
+    class CountingScriptProvider(MockChatProvider):
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def generate_json(self, *args, **kwargs):
+            self.calls += 1
+            return super().generate_json(*args, **kwargs)
+
+    provider = CountingScriptProvider()
+    monkeypatch.setattr("app.repositories.script_draft_repository.get_settings", lambda: Settings(postgres_host=""))
+    monkeypatch.setattr("app.services.script_draft_service.get_settings", lambda: Settings(postgres_host=""))
+    monkeypatch.setattr("app.services.script_draft_service.ai_provider_service.get_chat_provider", lambda: provider)
+
+    first = client.post("/api/v1/scripts", json={"topic": "手动唯一话题生成脚本", "platform": "douyin"})
+    second = client.post("/api/v1/scripts", json={"topic": " 手动唯一话题生成脚本 ", "platform": "douyin"})
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert second.json()["id"] == first.json()["id"]
+    assert provider.calls == 1
+
+
 def test_create_script_draft_accepts_top_level_script_body(monkeypatch) -> None:
     class TopLevelScriptProvider:
         def generate_json(self, *args, **kwargs):

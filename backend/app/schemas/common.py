@@ -222,6 +222,7 @@ class ScriptDraftSummary(BaseModel):
     id: str
     workspace_id: str = Field(serialization_alias="workspaceId", validation_alias="workspaceId")
     topic_idea_id: Optional[str] = Field(default=None, serialization_alias="topicIdeaId", validation_alias="topicIdeaId")
+    topic: Optional[str] = None
     title: str
     body: Optional[str] = None
     platform: Optional[Platform] = None

@@ -498,6 +498,7 @@ published | needs_review | script_reusable | seo_opportunity
   "id": "scr_xxx",
   "workspaceId": "ws_northstar",
   "topicIdeaId": "tp_role_shift",
+  "topic": "35 岁程序员不是危机，是岗位切换信号",
   "title": "35 岁程序员不是危机，是岗位切换信号",
   "body": "当前版本正文",
   "platform": "douyin",
@@ -532,6 +533,7 @@ published | needs_review | script_reusable | seo_opportunity
 
 说明：从选题或手动主题创建脚本草稿，并创建 `v1 AI 初稿`。该接口会调用现有 AI Provider 的脚本生成能力，并记录 `ai_generations` 审计记录。
 响应中的 `body` 是兼容文本镜像，结构化脚本以 `blocks` 为准。
+同一 `workspaceId + topicIdeaId` 只会保留一个脚本草稿；未传 `topicIdeaId` 时，同一 `workspaceId + topic` 只会保留一个脚本草稿。重复请求直接返回已有草稿，不会再次生成。
 
 请求体：
 

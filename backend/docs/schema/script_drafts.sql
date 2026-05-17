@@ -6,6 +6,7 @@ create table if not exists script_drafts (
   id varchar(64) primary key,
   workspace_id varchar(64) not null,
   topic_idea_id varchar(64),
+  topic varchar(500),
   title varchar(500) not null,
   body text,
   platform varchar(32),
@@ -18,11 +19,19 @@ create table if not exists script_drafts (
 
 alter table script_drafts add column if not exists current_version_id varchar(64);
 alter table script_drafts add column if not exists adopted_version_id varchar(64);
+alter table script_drafts add column if not exists topic varchar(500);
 
 create index if not exists ix_script_drafts_workspace_id on script_drafts (workspace_id);
 create index if not exists ix_script_drafts_topic_idea_id on script_drafts (topic_idea_id);
+create index if not exists ix_script_drafts_topic on script_drafts (topic);
 create index if not exists ix_script_drafts_current_version_id on script_drafts (current_version_id);
 create index if not exists ix_script_drafts_adopted_version_id on script_drafts (adopted_version_id);
+create unique index if not exists ux_script_drafts_workspace_topic_idea
+  on script_drafts (workspace_id, topic_idea_id)
+  where topic_idea_id is not null;
+create unique index if not exists ux_script_drafts_workspace_topic
+  on script_drafts (workspace_id, lower(topic))
+  where topic_idea_id is null and topic is not null;
 
 create table if not exists script_draft_versions (
   id varchar(64) primary key,
