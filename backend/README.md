@@ -80,10 +80,104 @@ http://localhost:8000/admin
 AI 选题生成的持久化表默认也不会自动创建。需要启用 `POST /api/v1/ai/topic-ideas` 的 PostgreSQL 保存和审计时，先手工执行：
 
 ```bash
+. .venv/bin/activate
+eval "$(.venv/bin/python - <<'PY'
+import shlex
+
+from app.core.config import get_settings
+s = get_settings()
+for key, value in {
+    "VO_MATE_POSTGRES_HOST": s.postgres_host,
+    "VO_MATE_POSTGRES_PORT": s.postgres_port,
+    "VO_MATE_POSTGRES_USER": s.postgres_user,
+    "VO_MATE_POSTGRES_PASSWORD": s.postgres_password,
+    "VO_MATE_POSTGRES_DATABASE": s.postgres_database,
+}.items():
+    if value is not None:
+        print(f"export {key}={shlex.quote(str(value))}")
+PY
+)"
 psql -h "$VO_MATE_POSTGRES_HOST" -p "$VO_MATE_POSTGRES_PORT" -U "$VO_MATE_POSTGRES_USER" -d "$VO_MATE_POSTGRES_DATABASE" -f docs/schema/topic_ideas.sql
 ```
 
-如果 PostgreSQL 未配置或表尚未创建，接口会降级到内存仓库，仍可用于本地联调。
+`POST /api/v1/ai/topic-ideas` 现在不再降级到内存仓库。PostgreSQL 未配置、表尚未创建、workspace/account 缺失、真实内容证据缺失或真实长期记忆缺失时，接口会返回 SSE `error` 事件。
+
+如果只是本地或内测环境想快速跑通真实 PostgreSQL 证据链，可以直接执行内测 seed。该脚本会兜底创建选题生成所需的基础表，并写入 `ws_northstar` / `douyin_demo` 下的账号、历史内容、文本证据、关键词标签和长期记忆：
+
+```bash
+. .venv/bin/activate
+eval "$(.venv/bin/python - <<'PY'
+import shlex
+
+from app.core.config import get_settings
+s = get_settings()
+for key, value in {
+    "VO_MATE_POSTGRES_HOST": s.postgres_host,
+    "VO_MATE_POSTGRES_PORT": s.postgres_port,
+    "VO_MATE_POSTGRES_USER": s.postgres_user,
+    "VO_MATE_POSTGRES_PASSWORD": s.postgres_password,
+    "VO_MATE_POSTGRES_DATABASE": s.postgres_database,
+}.items():
+    if value is not None:
+        print(f"export {key}={shlex.quote(str(value))}")
+PY
+)"
+psql -h "$VO_MATE_POSTGRES_HOST" -p "$VO_MATE_POSTGRES_PORT" -U "$VO_MATE_POSTGRES_USER" -d "$VO_MATE_POSTGRES_DATABASE" -f docs/schema/topic_ideas_dev_seed.sql
+```
+
+内测 seed 对应的验证请求：
+
+```bash
+curl -N http://localhost:8000/api/v1/ai/topic-ideas \
+  -H 'Content-Type: application/json' \
+  -d '{"workspaceId":"ws_northstar","accountIds":["douyin_demo"],"direction":"程序员职业成长","platforms":["douyin"],"goal":"followers","count":5,"audience":"25-35 岁有转型或副业诉求的程序员","constraints":{"tone":"理性复盘，不制造焦虑","avoidTopics":["裁员恐慌","卖课导流"]},"includeEvidence":true}'
+```
+
+历史表现数据入库表默认也不会自动创建。需要启用 `POST /api/v1/collector/import` 将 MongoDB Raw 数据标准化写入 `content_items` 和 `content_lifetime_metrics` 时，先手工执行：
+
+```bash
+. .venv/bin/activate
+eval "$(.venv/bin/python - <<'PY'
+import shlex
+
+from app.core.config import get_settings
+s = get_settings()
+for key, value in {
+    "VO_MATE_POSTGRES_HOST": s.postgres_host,
+    "VO_MATE_POSTGRES_PORT": s.postgres_port,
+    "VO_MATE_POSTGRES_USER": s.postgres_user,
+    "VO_MATE_POSTGRES_PASSWORD": s.postgres_password,
+    "VO_MATE_POSTGRES_DATABASE": s.postgres_database,
+}.items():
+    if value is not None:
+        print(f"export {key}={shlex.quote(str(value))}")
+PY
+)"
+psql -h "$VO_MATE_POSTGRES_HOST" -p "$VO_MATE_POSTGRES_PORT" -U "$VO_MATE_POSTGRES_USER" -d "$VO_MATE_POSTGRES_DATABASE" -f docs/schema/content_ingestion.sql
+```
+
+需要同步导入标题/文案/ASR/标签/关键词/流量来源等语义证据时，再执行：
+
+```bash
+. .venv/bin/activate
+eval "$(.venv/bin/python - <<'PY'
+import shlex
+
+from app.core.config import get_settings
+s = get_settings()
+for key, value in {
+    "VO_MATE_POSTGRES_HOST": s.postgres_host,
+    "VO_MATE_POSTGRES_PORT": s.postgres_port,
+    "VO_MATE_POSTGRES_USER": s.postgres_user,
+    "VO_MATE_POSTGRES_PASSWORD": s.postgres_password,
+    "VO_MATE_POSTGRES_DATABASE": s.postgres_database,
+}.items():
+    if value is not None:
+        print(f"export {key}={shlex.quote(str(value))}")
+PY
+)"
+psql -h "$VO_MATE_POSTGRES_HOST" -p "$VO_MATE_POSTGRES_PORT" -U "$VO_MATE_POSTGRES_USER" -d "$VO_MATE_POSTGRES_DATABASE" -f docs/schema/content_enrichment.sql
+```
 
 验证 PostgreSQL 证据模式：
 
@@ -95,15 +189,17 @@ curl -N http://localhost:8000/api/v1/ai/topic-ideas \
 curl http://localhost:8000/api/v1/ai/generations/gen_xxx
 ```
 
-如果 `inputPayload.dataSourceMode` 为 `postgres`，说明本次生成已读取 PostgreSQL 标准层；如果是 `memory_fallback`，说明服务降级到了内存数据。
+调用前必须配置 `VO_MATE_LLM_PROVIDER=deepseek` 和 `VO_MATE_DEEPSEEK_API_KEY`；否则接口会返回 SSE `error`，不会退回 mock provider。
+
+如果 `inputPayload.dataSourceMode` 为 `postgres` 或 `postgres_no_vector`，说明本次生成已读取 PostgreSQL 标准层；如果为 `milvus`，说明记忆证据来自 Milvus 命中后回查 PostgreSQL。该接口不应再出现 `memory_fallback`。
 
 启用 Milvus 向量记忆召回：
 
-1. 配置 `VO_MATE_MILVUS_HOST`、`VO_MATE_MILVUS_PORT`，并配置 `VO_MATE_EMBEDDING_PROVIDER` / `VO_MATE_DASHSCOPE_API_KEY`。
+1. 配置 `VO_MATE_MILVUS_HOST`、`VO_MATE_MILVUS_PORT`，并配置 `VO_MATE_EMBEDDING_PROVIDER=dashscope` / `VO_MATE_DASHSCOPE_API_KEY`。
 2. 通过记忆写入入口创建或索引 `active` 状态的长期记忆。
-3. 再调用 `POST /api/v1/ai/topic-ideas`。服务会按需创建 Milvus collection `vo_mate_agent_memories`，优先向量召回记忆 ID，并回查 PostgreSQL 或内存记忆仓库补全证据字段。
+3. 再调用 `POST /api/v1/ai/topic-ideas`。服务会按需创建 Milvus collection `vo_mate_agent_memories`，优先向量召回记忆 ID，并回查 PostgreSQL `agent_memory_records` 补全证据字段。
 
-如果 `inputPayload.dataSourceMode` 为 `milvus`，说明本次生成已使用向量记忆召回；如果 Milvus 或 embedding 不可用，接口会自动降级，不影响前端 SSE 协议。
+如果 `inputPayload.dataSourceMode` 为 `milvus`，说明本次生成已使用向量记忆召回；如果 Milvus 或 embedding 不可用，接口会跳过向量路径并使用 PostgreSQL 真实记忆，不会使用 mock embedding 或内存记忆。
 
 SQLAdmin 默认启用登录认证。配置 `VO_MATE_SQLADMIN_USERNAME`、`VO_MATE_SQLADMIN_PASSWORD` 或 `VO_MATE_SQLADMIN_PASSWORD_SHA256`、`VO_MATE_SQLADMIN_SESSION_SECRET` 后访问 `/admin` 登录。`VO_MATE_SQLADMIN_ROLE` 支持：
 
@@ -136,6 +232,12 @@ VITE_API_BASE_URL=http://localhost:8000/api/v1
 - `GET /api/v1/contents/{content_id}/asr`
 - `GET /api/v1/ai/topic-ideas`
 - `POST /api/v1/ai/topic-ideas`
+- `GET /api/v1/scripts`
+- `GET /api/v1/scripts/{draft_id}`
+- `POST /api/v1/scripts`
+- `POST /api/v1/scripts/{draft_id}/versions`
+- `PATCH /api/v1/scripts/{draft_id}/versions/{version_id}/status`
+- `PATCH /api/v1/scripts/{draft_id}/current-version`
 - `GET /api/v1/ai/evidence`
 - `POST /api/v1/ai/{workflow}`
 - `POST /api/v1/agent/topic-workbench/run`

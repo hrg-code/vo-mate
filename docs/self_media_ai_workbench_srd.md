@@ -742,6 +742,7 @@ account_fans_snapshots
 account_fans_trends
 topic_ideas
 script_drafts
+script_draft_versions
 publish_plans
 experiments
 ai_generations
@@ -801,6 +802,38 @@ memory_events
 - `reason`
 - `status`
 - `created_by`
+- `created_at`
+
+### `script_drafts` 关键字段
+
+- `id`
+- `workspace_id`
+- `topic_idea_id`
+- `title`
+- `body`
+- `platform`
+- `status`
+- `current_version_id`
+- `adopted_version_id`
+- `created_at`
+- `updated_at`
+
+### `script_draft_versions` 关键字段
+
+- `id`
+- `draft_id`
+- `version_no`
+- `label`
+- `platform`
+- `duration_seconds`
+- `body`
+- `description`
+- `tags`
+- `title_candidates`
+- `source_type`
+- `parent_version_id`
+- `generation_id`
+- `status`
 - `created_at`
 
 ## 9.3 Redis
@@ -1257,4 +1290,3 @@ Milvus 负责向量检索和记忆演化：
 - Milvus 记忆要可见、可控、可删除。
 - 工作台第一屏必须可操作，不做空泛首页。
 - AI 不是替代创作者，而是放大创作者的判断力。
-

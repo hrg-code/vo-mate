@@ -28,7 +28,17 @@ class TopicIdeaRepository:
                     session.rollback()
         return self.topic_repository.topic_ideas
 
-    def save_generated_ideas(self, ideas: List[TopicIdea], source_payload: Optional[Dict[str, Any]] = None) -> List[TopicIdea]:
+    def get_topic_idea(self, topic_idea_id: str) -> Optional[TopicIdea]:
+        with self._session() as session:
+            if session is not None:
+                try:
+                    row = session.get(TopicIdeaModel, topic_idea_id)
+                    return self._from_model(row) if row is not None else None
+                except SQLAlchemyError:
+                    session.rollback()
+        return next((idea for idea in self.topic_repository.topic_ideas if idea.id == topic_idea_id), None)
+
+    def save_generated_ideas(self, ideas: List[TopicIdea], source_payload: Optional[Dict[str, Any]] = None, *, strict: bool = False) -> List[TopicIdea]:
         with self._session() as session:
             if session is not None:
                 try:
@@ -38,7 +48,11 @@ class TopicIdeaRepository:
                     return ideas
                 except SQLAlchemyError:
                     session.rollback()
+                    if strict:
+                        raise RuntimeError("PostgreSQL topic_ideas persistence failed")
 
+        if strict:
+            raise RuntimeError("PostgreSQL topic_ideas persistence is required")
         existing_by_id = {idea.id: idea for idea in self.topic_repository.topic_ideas}
         for idea in ideas:
             existing_by_id[idea.id] = idea
@@ -53,6 +67,7 @@ class TopicIdeaRepository:
         model: Optional[str],
         prompt_version: str,
         input_payload: Dict[str, Any],
+        strict: bool = False,
     ) -> None:
         record = {
             "id": generation_id,
@@ -75,18 +90,23 @@ class TopicIdeaRepository:
                     return
                 except SQLAlchemyError:
                     session.rollback()
+                    if strict:
+                        raise RuntimeError("PostgreSQL ai_generations start persistence failed")
+        if strict:
+            raise RuntimeError("PostgreSQL ai_generations persistence is required")
         self.memory_generations[generation_id] = record
 
-    def record_generation_succeeded(self, generation_id: str, evidence_ids: List[str], output_payload: Dict[str, Any]) -> None:
+    def record_generation_succeeded(self, generation_id: str, evidence_ids: List[str], output_payload: Dict[str, Any], *, strict: bool = False) -> None:
         self._finish_generation(
             generation_id=generation_id,
             status="succeeded",
             evidence_ids=evidence_ids,
             output_payload=output_payload,
             error=None,
+            strict=strict,
         )
 
-    def update_generation_input(self, generation_id: str, input_payload: Dict[str, Any]) -> None:
+    def update_generation_input(self, generation_id: str, input_payload: Dict[str, Any], *, strict: bool = False) -> None:
         with self._session() as session:
             if session is not None:
                 try:
@@ -97,18 +117,24 @@ class TopicIdeaRepository:
                         return
                 except SQLAlchemyError:
                     session.rollback()
+                    if strict:
+                        raise RuntimeError("PostgreSQL ai_generations input update failed")
 
         record = self.memory_generations.get(generation_id)
         if record is not None:
             record["inputPayload"] = input_payload
+            return
+        if strict:
+            raise RuntimeError("PostgreSQL ai_generations record not found")
 
-    def record_generation_failed(self, generation_id: str, error: str) -> None:
+    def record_generation_failed(self, generation_id: str, error: str, *, strict: bool = False) -> None:
         self._finish_generation(
             generation_id=generation_id,
             status="failed",
             evidence_ids=[],
             output_payload=None,
             error=error,
+            strict=strict,
         )
 
     def get_generation(self, generation_id: str) -> Optional[Dict[str, Any]]:
@@ -119,7 +145,10 @@ class TopicIdeaRepository:
                     return self._generation_dict(row) if row is not None else None
                 except SQLAlchemyError:
                     session.rollback()
-        return self.memory_generations.get(generation_id)
+        generation = self.memory_generations.get(generation_id)
+        if generation is not None and generation.get("workflow") == "topic-ideas":
+            return None
+        return generation
 
     def _finish_generation(
         self,
@@ -128,6 +157,7 @@ class TopicIdeaRepository:
         evidence_ids: List[str],
         output_payload: Optional[Dict[str, Any]],
         error: Optional[str],
+        strict: bool = False,
     ) -> None:
         with self._session() as session:
             if session is not None:
@@ -142,6 +172,8 @@ class TopicIdeaRepository:
                         return
                 except SQLAlchemyError:
                     session.rollback()
+                    if strict:
+                        raise RuntimeError("PostgreSQL ai_generations finish update failed")
 
         record = self.memory_generations.get(generation_id)
         if record is not None:
@@ -153,6 +185,9 @@ class TopicIdeaRepository:
                     "error": error,
                 }
             )
+            return
+        if strict:
+            raise RuntimeError("PostgreSQL ai_generations record not found")
 
     def _session(self):
         return _OptionalSession()

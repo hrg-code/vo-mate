@@ -15,10 +15,16 @@ from app.db.models import (
     Base,
     CollectorTask,
     ContentItem,
+    ContentKeyword,
+    ContentLifetimeMetric,
+    ContentTag,
+    ContentTextAsset,
+    ContentTrafficSource,
     MemoryPattern,
     PlatformAccount,
     PublishPlan,
     ScriptDraft,
+    ScriptDraftVersion,
     TopicIdea,
     User,
     Workspace,
@@ -51,6 +57,36 @@ ADMIN_COLUMN_LABELS = {
     "external_content_id": "外部内容编号",
     "title": "标题",
     "body": "正文",
+    "draft_id": "脚本草稿编号",
+    "version_no": "版本号",
+    "label": "版本名称",
+    "duration_seconds": "时长秒数",
+    "title_candidates": "标题候选",
+    "parent_version_id": "父版本编号",
+    "current_version_id": "当前版本编号",
+    "adopted_version_id": "采用版本编号",
+    "content_type": "内容类型",
+    "cover_url": "封面 URL",
+    "video_url": "视频 URL",
+    "topic_cluster_id": "主题簇编号",
+    "raw_collection": "Raw 集合",
+    "raw_document_id": "Raw 文档编号",
+    "asset_type": "文本类型",
+    "language": "语言",
+    "segments": "分段",
+    "tag": "标签",
+    "tag_type": "标签类型",
+    "external_tag_id": "外部标签编号",
+    "position_start": "起始位置",
+    "position_end": "结束位置",
+    "keyword": "关键词",
+    "keyword_type": "关键词类型",
+    "query_count_7d": "7 日搜索量",
+    "source_name": "来源名称",
+    "source_type": "来源类型",
+    "ratio": "占比",
+    "count": "数量",
+    "raw_payload": "Raw 数据",
     "published_at": "发布时间",
     "duration_seconds": "时长秒数",
     "views": "播放量",
@@ -63,6 +99,21 @@ ADMIN_COLUMN_LABELS = {
     "score": "评分",
     "has_asr": "是否有转写",
     "reviewed": "是否复盘",
+    "content_id": "内容编号",
+    "play_count": "播放量",
+    "like_count": "点赞数",
+    "comment_count": "评论数",
+    "share_count": "分享数",
+    "collect_count": "收藏数",
+    "follow_count": "新增粉丝",
+    "profile_visit_count": "主页访问",
+    "avg_view_duration": "平均观看时长",
+    "avg_view_percent": "平均观看占比",
+    "finish_rate": "完播率",
+    "five_second_retention": "5 秒留存",
+    "bounce_rate": "跳出率",
+    "negative_feedback_count": "负反馈数",
+    "metric_score": "指标评分",
     "angle": "切入角度",
     "topic": "主题",
     "category": "分类",
@@ -181,6 +232,58 @@ class ContentItemAdmin(AdminPermissionMixin, ChineseModelView, model=ContentItem
     column_sortable_list = [ContentItem.views, ContentItem.score, ContentItem.published_at]
 
 
+class ContentLifetimeMetricAdmin(AdminPermissionMixin, ChineseModelView, model=ContentLifetimeMetric):
+    name = "内容累计指标"
+    name_plural = "内容累计指标"
+    icon = "fa-solid fa-chart-line"
+    column_list = [
+        ContentLifetimeMetric.content_id,
+        ContentLifetimeMetric.play_count,
+        ContentLifetimeMetric.like_count,
+        ContentLifetimeMetric.comment_count,
+        ContentLifetimeMetric.collect_count,
+        ContentLifetimeMetric.metric_score,
+        ContentLifetimeMetric.updated_at,
+    ]
+    column_sortable_list = [ContentLifetimeMetric.play_count, ContentLifetimeMetric.metric_score, ContentLifetimeMetric.updated_at]
+
+
+class ContentTextAssetAdmin(AdminPermissionMixin, ChineseModelView, model=ContentTextAsset):
+    name = "内容文本资产"
+    name_plural = "内容文本资产"
+    icon = "fa-solid fa-align-left"
+    column_list = [ContentTextAsset.id, ContentTextAsset.content_id, ContentTextAsset.asset_type, ContentTextAsset.language, ContentTextAsset.source, ContentTextAsset.updated_at]
+    column_searchable_list = [ContentTextAsset.content_id, ContentTextAsset.text]
+    column_sortable_list = [ContentTextAsset.updated_at]
+
+
+class ContentTagAdmin(AdminPermissionMixin, ChineseModelView, model=ContentTag):
+    name = "内容标签"
+    name_plural = "内容标签"
+    icon = "fa-solid fa-tags"
+    column_list = [ContentTag.id, ContentTag.content_id, ContentTag.tag, ContentTag.tag_type, ContentTag.source, ContentTag.updated_at]
+    column_searchable_list = [ContentTag.content_id, ContentTag.tag]
+    column_sortable_list = [ContentTag.updated_at]
+
+
+class ContentKeywordAdmin(AdminPermissionMixin, ChineseModelView, model=ContentKeyword):
+    name = "内容关键词"
+    name_plural = "内容关键词"
+    icon = "fa-solid fa-key"
+    column_list = [ContentKeyword.id, ContentKeyword.content_id, ContentKeyword.keyword, ContentKeyword.keyword_type, ContentKeyword.query_count_7d, ContentKeyword.score]
+    column_searchable_list = [ContentKeyword.content_id, ContentKeyword.keyword]
+    column_sortable_list = [ContentKeyword.query_count_7d, ContentKeyword.score]
+
+
+class ContentTrafficSourceAdmin(AdminPermissionMixin, ChineseModelView, model=ContentTrafficSource):
+    name = "内容流量来源"
+    name_plural = "内容流量来源"
+    icon = "fa-solid fa-route"
+    column_list = [ContentTrafficSource.id, ContentTrafficSource.content_id, ContentTrafficSource.source_name, ContentTrafficSource.source_type, ContentTrafficSource.ratio, ContentTrafficSource.count]
+    column_searchable_list = [ContentTrafficSource.content_id, ContentTrafficSource.source_name]
+    column_sortable_list = [ContentTrafficSource.ratio, ContentTrafficSource.count]
+
+
 class TopicIdeaAdmin(AdminPermissionMixin, ChineseModelView, model=TopicIdea):
     name = "选题"
     name_plural = "选题"
@@ -201,8 +304,24 @@ class ScriptDraftAdmin(AdminPermissionMixin, ChineseModelView, model=ScriptDraft
     name = "脚本草稿"
     name_plural = "脚本草稿"
     icon = "fa-solid fa-file-lines"
-    column_list = [ScriptDraft.id, ScriptDraft.title, ScriptDraft.platform, ScriptDraft.status, ScriptDraft.updated_at]
+    column_list = [ScriptDraft.id, ScriptDraft.title, ScriptDraft.platform, ScriptDraft.status, ScriptDraft.current_version_id, ScriptDraft.updated_at]
     column_searchable_list = [ScriptDraft.title]
+
+
+class ScriptDraftVersionAdmin(AdminPermissionMixin, ChineseModelView, model=ScriptDraftVersion):
+    name = "脚本版本"
+    name_plural = "脚本版本"
+    icon = "fa-solid fa-code-branch"
+    column_list = [
+        ScriptDraftVersion.id,
+        ScriptDraftVersion.draft_id,
+        ScriptDraftVersion.version_no,
+        ScriptDraftVersion.label,
+        ScriptDraftVersion.source_type,
+        ScriptDraftVersion.status,
+        ScriptDraftVersion.created_at,
+    ]
+    column_searchable_list = [ScriptDraftVersion.id, ScriptDraftVersion.draft_id, ScriptDraftVersion.label]
 
 
 class PublishPlanAdmin(AdminPermissionMixin, ChineseModelView, model=PublishPlan):
@@ -275,9 +394,15 @@ ADMIN_MODEL_VIEWS = [
     TopicIdeaAdmin,
     AIGenerationAdmin,
     ScriptDraftAdmin,
+    ScriptDraftVersionAdmin,
     PublishPlanAdmin,
     MemoryPatternAdmin,
     CollectorTaskAdmin,
+    ContentLifetimeMetricAdmin,
+    ContentTextAssetAdmin,
+    ContentTagAdmin,
+    ContentKeywordAdmin,
+    ContentTrafficSourceAdmin,
     AgentMemoryRecordAdmin,
     AgentThreadSummaryAdmin,
     AgentRunAdmin,

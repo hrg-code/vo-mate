@@ -1,7 +1,29 @@
-import { Button, Input, Select, Tabs, Tag } from "antd";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Alert, Button, Empty, Input, InputNumber, Progress, Select, Tabs, Tag } from "antd";
+import { api } from "../api/client";
 import { PageHeader } from "../components/PageHeader";
 import { platformLabel } from "../components/format";
-import type { MemoryPattern, PublishPlan } from "../types";
+import {
+  composeScriptBody,
+  createScriptBlock,
+  createScriptBlocksFromBody,
+  normalizeScriptBlocks,
+  scriptBlockRoleOptions,
+  serializeScriptBlocks
+} from "../features/scripts/scriptBlocks";
+import type {
+  MemoryPattern,
+  PublishPlan,
+  ScriptBlock,
+  ScriptBlockRole,
+  ScriptCopilotAction,
+  ScriptDraft,
+  ScriptDraftVersion,
+  EvidenceQuery,
+  ScriptQualityReport,
+  ScriptSeoPackage,
+  TopicIdea
+} from "../types";
 
 const { TextArea } = Input;
 
@@ -32,12 +54,295 @@ export function AudiencePage() {
 }
 
 export function ScriptsPage({
+  initialTopic,
+  initialTopicDurationSeconds,
+  onInitialTopicConsumed,
   onNavigateSeo,
-  onOpenEvidence
+  onOpenEvidence,
+  workspaceId = "ws_northstar"
 }: {
+  initialTopic?: TopicIdea;
+  initialTopicDurationSeconds?: number;
+  onInitialTopicConsumed?: () => void;
   onNavigateSeo: () => void;
-  onOpenEvidence: () => void;
+  onOpenEvidence: (query?: EvidenceQuery) => void;
+  workspaceId?: string;
 }) {
+  const [drafts, setDrafts] = useState<ScriptDraft[]>([]);
+  const [activeDraft, setActiveDraft] = useState<ScriptDraft | null>(null);
+  const [scriptBlocks, setScriptBlocks] = useState<ScriptBlock[]>([]);
+  const [savedBlocksSnapshot, setSavedBlocksSnapshot] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [qualityReport, setQualityReport] = useState<ScriptQualityReport | null>(null);
+  const [seoPackage, setSeoPackage] = useState<ScriptSeoPackage | null>(null);
+  const [copilotLoading, setCopilotLoading] = useState(false);
+  const [copilotError, setCopilotError] = useState<string | null>(null);
+  const consumedInitialTopicId = useRef<string | null>(null);
+
+  const currentVersion = activeDraft?.currentVersion;
+  const editorValue = useMemo(() => composeScriptBody(scriptBlocks), [scriptBlocks]);
+  const currentEvidenceGenerationId =
+    currentVersion?.generationId ??
+    activeDraft?.versions.find((version) => version.id === currentVersion?.parentVersionId)?.generationId;
+  const charCount = editorValue.replace(/\s/g, "").length;
+  const blockDurationSeconds = scriptBlocks.reduce((sum, block) => sum + (block.durationSeconds ?? 0), 0);
+  const estimatedDuration = blockDurationSeconds > 0 ? blockDurationSeconds : currentVersion?.durationSeconds ?? estimateScriptDuration(editorValue);
+  const currentBlocksSnapshot = useMemo(() => serializeScriptBlocks(scriptBlocks), [scriptBlocks]);
+  const dirty = Boolean(currentVersion && currentBlocksSnapshot !== savedBlocksSnapshot);
+
+  const refreshDraft = useCallback(async (draftId: string) => {
+    const detail = await api.getScriptDraft(draftId);
+    setActiveDraft(detail);
+    setDrafts([detail]);
+  }, []);
+
+  const upsertActiveDraft = useCallback((draft: ScriptDraft) => {
+    setDrafts([draft]);
+    setActiveDraft(draft);
+  }, []);
+
+  const createDraftFromTopic = useCallback(
+    async (topic?: TopicIdea, durationSeconds = 60) => {
+      const targetPlatform = topic?.targetPlatforms?.[0] ?? "douyin";
+      const topicText = topic?.title ?? "35 岁程序员不是危机，是岗位切换信号";
+      const draft = await api.createScriptDraft({
+        workspaceId,
+        topicIdeaId: topic?.id,
+        topic: topicText,
+        title: topic?.title,
+        platform: targetPlatform,
+        durationSeconds
+      });
+      upsertActiveDraft(draft);
+      return draft;
+    },
+    [upsertActiveDraft, workspaceId]
+  );
+
+  const loadDrafts = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      if (initialTopic) {
+        setDrafts([]);
+        setActiveDraft(null);
+        return;
+      }
+      const rows = await api.getScriptDrafts();
+      if (rows.length > 0) {
+        await refreshDraft(rows[0].id);
+      } else {
+        setDrafts([]);
+        setActiveDraft(null);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "加载脚本草稿失败");
+    } finally {
+      setLoading(false);
+    }
+  }, [initialTopic, refreshDraft]);
+
+  useEffect(() => {
+    void loadDrafts();
+  }, [loadDrafts]);
+
+  useEffect(() => {
+    if (!initialTopic || consumedInitialTopicId.current === initialTopic.id) return;
+    setDrafts([]);
+    setActiveDraft(null);
+    consumedInitialTopicId.current = initialTopic.id;
+    setSaving(true);
+    setError(null);
+    void createDraftFromTopic(initialTopic, initialTopicDurationSeconds ?? 60)
+      .then(() => {
+        onInitialTopicConsumed?.();
+      })
+      .catch((err) => {
+        setError(err instanceof Error ? err.message : "生成脚本失败");
+      })
+      .finally(() => {
+        setSaving(false);
+        setLoading(false);
+      });
+  }, [createDraftFromTopic, initialTopic, initialTopicDurationSeconds, onInitialTopicConsumed]);
+
+  useEffect(() => {
+    if (!currentVersion) {
+      setScriptBlocks([]);
+      setSavedBlocksSnapshot("");
+      return;
+    }
+    const normalizedBlocks = normalizeScriptBlocks(currentVersion.blocks, currentVersion.body, currentVersion.durationSeconds);
+    setScriptBlocks(normalizedBlocks);
+    setSavedBlocksSnapshot(serializeScriptBlocks(normalizedBlocks));
+  }, [currentVersion]);
+
+  useEffect(() => {
+    if (!activeDraft || !currentVersion) {
+      setQualityReport(null);
+      setSeoPackage(null);
+      return;
+    }
+
+    let active = true;
+    const timeoutId = window.setTimeout(() => {
+      setCopilotLoading(true);
+      setCopilotError(null);
+      void Promise.all([
+        api.getScriptQualityReport(activeDraft.id, currentVersion.id, editorValue),
+        api.getScriptSeoPackage(activeDraft.id, currentVersion.id, editorValue)
+      ])
+        .then(([report, seo]) => {
+          if (!active) return;
+          setQualityReport(report);
+          setSeoPackage(seo);
+        })
+        .catch((err) => {
+          if (!active) return;
+          setCopilotError(err instanceof Error ? err.message : "加载 Copilot 失败");
+        })
+        .finally(() => {
+          if (active) setCopilotLoading(false);
+        });
+    }, 250);
+
+    return () => {
+      active = false;
+      window.clearTimeout(timeoutId);
+    };
+  }, [activeDraft, currentVersion, editorValue]);
+
+  const groupedVersions = useMemo(() => {
+    const versions = activeDraft?.versions ?? [];
+    return {
+      adopted: versions.filter((version) => version.status === "adopted"),
+      candidate: versions.filter((version) => version.status === "candidate"),
+      history: versions.filter((version) => version.status === "discarded")
+    };
+  }, [activeDraft?.versions]);
+
+  const handleCreateDraft = async () => {
+    setSaving(true);
+    setError(null);
+    try {
+      await createDraftFromTopic();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "创建脚本失败");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleSelectDraft = async (draftId: string) => {
+    setError(null);
+    try {
+      await refreshDraft(draftId);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "切换脚本失败");
+    }
+  };
+
+  const handleSelectVersion = async (versionId: string) => {
+    if (!activeDraft) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const draft = await api.updateScriptCurrentVersion(activeDraft.id, versionId);
+      setActiveDraft(draft);
+      setDrafts([draft]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "切换版本失败");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleSaveVersion = async () => {
+    if (!activeDraft || !currentVersion || !editorValue.trim()) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const nextVersionNo = activeDraft.versions.length + 1;
+      const draft = await api.createScriptVersion(activeDraft.id, {
+        body: editorValue,
+        blocks: scriptBlocks,
+        label: `v${nextVersionNo} 用户修改`,
+        platform: currentVersion.platform ?? activeDraft.platform,
+        durationSeconds: estimatedDuration,
+        description: currentVersion.description,
+        tags: currentVersion.tags,
+        titleCandidates: currentVersion.titleCandidates,
+        sourceType: "user_save",
+        parentVersionId: currentVersion.id
+      });
+      setActiveDraft(draft);
+      setDrafts([draft]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "保存版本失败");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleRunCopilotAction = async (actionId: ScriptCopilotAction["id"]) => {
+    if (!activeDraft || !currentVersion || !editorValue.trim()) return;
+    setCopilotLoading(true);
+    setCopilotError(null);
+    try {
+      const suggestion = await api.runScriptCopilotAction(activeDraft.id, currentVersion.id, actionId, editorValue);
+      setScriptBlocks(createScriptBlocksFromBody(suggestion.body, currentVersion.durationSeconds));
+    } catch (err) {
+      setCopilotError(err instanceof Error ? err.message : "生成 Copilot 建议失败");
+    } finally {
+      setCopilotLoading(false);
+    }
+  };
+
+  const handleAddBlock = () => {
+    setScriptBlocks((current) => [...current, createScriptBlock("point")]);
+  };
+
+  const handleUpdateBlock = (blockId: string, patch: Partial<ScriptBlock>) => {
+    setScriptBlocks((current) => current.map((block) => (block.id === blockId ? { ...block, ...patch } : block)));
+  };
+
+  const handleChangeBlockRole = (blockId: string, role: ScriptBlockRole) => {
+    const option = scriptBlockRoleOptions.find((item) => item.role === role);
+    setScriptBlocks((current) =>
+      current.map((block) =>
+        block.id === blockId
+          ? {
+              ...block,
+              role,
+              label: option?.label ?? block.label,
+              visualHint: block.visualHint || option?.visualHint
+            }
+          : block
+      )
+    );
+  };
+
+  const handleMoveBlock = (blockId: string, direction: -1 | 1) => {
+    setScriptBlocks((current) => {
+      const index = current.findIndex((block) => block.id === blockId);
+      const targetIndex = index + direction;
+      if (index < 0 || targetIndex < 0 || targetIndex >= current.length) return current;
+      const next = [...current];
+      [next[index], next[targetIndex]] = [next[targetIndex], next[index]];
+      return next;
+    });
+  };
+
+  const handleRemoveBlock = (blockId: string) => {
+    setScriptBlocks((current) => (current.length <= 1 ? current : current.filter((block) => block.id !== blockId)));
+  };
+
+  const handleOpenCurrentEvidence = useCallback(() => {
+    onOpenEvidence(currentEvidenceGenerationId ? { generationId: currentEvidenceGenerationId, limit: 20 } : undefined);
+  }, [currentEvidenceGenerationId, onOpenEvidence]);
+
   return (
     <>
       <PageHeader
@@ -45,69 +350,472 @@ export function ScriptsPage({
         subtitle="把选题转为可拍、可改、可发布的口播内容"
         actions={
           <>
-            <Button>保存草稿</Button>
+            <Button onClick={handleCreateDraft} loading={saving}>
+              生成脚本
+            </Button>
+            <Button onClick={handleSaveVersion} disabled={!dirty || !editorValue.trim()} loading={saving}>
+              保存版本
+            </Button>
             <Button type="primary" onClick={onNavigateSeo}>
               生成 SEO
             </Button>
           </>
         }
       />
+      {error ? <Alert className="page-gap" type="error" showIcon message={error} /> : null}
+      <ScriptDraftToolbar
+        activeDraft={activeDraft}
+        drafts={drafts}
+        groupedVersions={groupedVersions}
+        loading={loading}
+        saving={saving}
+        onCreateDraft={handleCreateDraft}
+        onSelectDraft={handleSelectDraft}
+        onSelectVersion={handleSelectVersion}
+      />
       <section className="split-page">
-        <aside className="panel">
-          <h2>当前选题</h2>
-          <p>
-            <strong>35 岁程序员不是危机，是岗位切换信号</strong>
-          </p>
-          <p className="muted">参考 12 条历史内容，推荐 60 秒结构。</p>
-          <h3>版本</h3>
-          <div className="action-list">
-            <article className="action-item">
-              <strong>v1 AI 初稿</strong>
-              <p className="muted">10:42 生成</p>
-            </article>
-            <article className="action-item">
-              <strong>v2 抖音版</strong>
-              <p className="muted">强化开头钩子</p>
-            </article>
-          </div>
-        </aside>
 
-        <section className="panel script-editor">
-          <div className="panel-header">
-            <h2>口播脚本</h2>
-            <Tag color="success">预计 58 秒</Tag>
-          </div>
-          <TextArea
-            className="script-textarea"
-            defaultValue={
-              "开头 3 秒：\n如果你担心 35 岁以后写不动代码，先别急着否定自己。\n\n主体：\n真正的问题不是年龄，而是你还停留在“只接需求”的岗位形态里。35 岁以后，企业更需要的是能拆问题、控风险、带人交付的人。\n\n转折：\n所以这不是退出信号，而是岗位切换信号。\n\n结尾 CTA：\n如果你想知道怎么从执行型程序员转到方案型角色，我下一条讲具体路径。"
-            }
-          />
-          <div className="word-count">
-            <span>字数 226</span>
-            <span>结构：钩子 / 解释 / 转折 / CTA</span>
-          </div>
-        </section>
+        <ScriptProductionSheet
+          blocks={scriptBlocks}
+          charCount={charCount}
+          currentVersion={currentVersion}
+          estimatedDuration={estimatedDuration}
+          loading={copilotLoading}
+          seoPackage={seoPackage}
+          onAddBlock={handleAddBlock}
+          onChangeBlockRole={handleChangeBlockRole}
+          onOpenEvidence={handleOpenCurrentEvidence}
+          onOptimize={handleRunCopilotAction}
+          onMoveBlock={handleMoveBlock}
+          onRemoveBlock={handleRemoveBlock}
+          onUpdateBlock={handleUpdateBlock}
+        />
 
-        <aside className="panel">
-          <h2>AI Copilot</h2>
-          <div className="task-list">
-            <Button>改强开头</Button>
-            <Button>缩短到 30 秒</Button>
-            <Button>加真实案例</Button>
-            <Button>转小红书口吻</Button>
-          </div>
-          <div className="evidence-list page-gap">
-            <article className="evidence-item">
-              <strong>当前判断</strong>
-              <p className="muted">开头清晰，但中段案例不足，建议加入一条真实项目场景。</p>
-            </article>
-            <Button onClick={onOpenEvidence}>查看依据</Button>
-          </div>
-        </aside>
+        <QualityInspector
+          loading={copilotLoading}
+          error={copilotError}
+          qualityReport={qualityReport}
+          onRunAction={handleRunCopilotAction}
+        />
       </section>
     </>
   );
+}
+
+function ScriptDraftToolbar({
+  activeDraft,
+  drafts,
+  groupedVersions,
+  loading,
+  saving,
+  onCreateDraft,
+  onSelectDraft,
+  onSelectVersion
+}: {
+  activeDraft: ScriptDraft | null;
+  drafts: ScriptDraft[];
+  groupedVersions: {
+    adopted: ScriptDraftVersion[];
+    candidate: ScriptDraftVersion[];
+    history: ScriptDraftVersion[];
+  };
+  loading: boolean;
+  saving: boolean;
+  onCreateDraft: () => Promise<void>;
+  onSelectDraft: (draftId: string) => Promise<void>;
+  onSelectVersion: (versionId: string) => Promise<void>;
+}) {
+  const versionOptions = [
+    ...groupedVersions.adopted.map((version) => ({ value: version.id, label: `当前采用 · ${version.label}` })),
+    ...groupedVersions.candidate.map((version) => ({ value: version.id, label: `候选 · ${version.label}` })),
+    ...groupedVersions.history.map((version) => ({ value: version.id, label: `历史 · ${version.label}` }))
+  ];
+
+  return (
+    <section className="panel script-draft-toolbar">
+      <label className="toolbar-field toolbar-field-wide">
+        <span>脚本草稿</span>
+        <Select
+          aria-label="脚本草稿"
+          loading={loading}
+          disabled={drafts.length === 0}
+          value={activeDraft?.id}
+          placeholder={loading ? "正在加载脚本草稿" : "暂无脚本草稿"}
+          options={drafts.map((draft) => ({
+            value: draft.id,
+            label: draft.title
+          }))}
+          onChange={(draftId) => void onSelectDraft(draftId)}
+        />
+      </label>
+      <label className="toolbar-field">
+        <span>版本</span>
+        <Select
+          aria-label="脚本版本"
+          disabled={versionOptions.length === 0}
+          value={activeDraft?.currentVersionId}
+          placeholder="暂无版本"
+          options={versionOptions}
+          onChange={(versionId) => void onSelectVersion(versionId)}
+        />
+      </label>
+      <div className="toolbar-current">
+        <span>当前状态</span>
+        <strong>{activeDraft?.currentVersion ? sourceTypeLabel(activeDraft.currentVersion.sourceType) : "未生成"}</strong>
+        <p>{activeDraft?.platform ? platformLabel[activeDraft.platform] : "未定平台"}</p>
+      </div>
+      <Button onClick={() => void onCreateDraft()} loading={saving}>
+        新建脚本
+      </Button>
+    </section>
+  );
+}
+
+function ScriptProductionSheet({
+  blocks,
+  charCount,
+  currentVersion,
+  estimatedDuration,
+  loading,
+  seoPackage,
+  onAddBlock,
+  onChangeBlockRole,
+  onOpenEvidence,
+  onOptimize,
+  onMoveBlock,
+  onRemoveBlock,
+  onUpdateBlock
+}: {
+  blocks: ScriptBlock[];
+  charCount: number;
+  currentVersion?: ScriptDraftVersion;
+  estimatedDuration: number;
+  loading: boolean;
+  seoPackage: ScriptSeoPackage | null;
+  onAddBlock: () => void;
+  onChangeBlockRole: (blockId: string, role: ScriptBlockRole) => void;
+  onOpenEvidence: () => void;
+  onOptimize: (actionId: ScriptCopilotAction["id"]) => Promise<void>;
+  onMoveBlock: (blockId: string, direction: -1 | 1) => void;
+  onRemoveBlock: (blockId: string) => void;
+  onUpdateBlock: (blockId: string, patch: Partial<ScriptBlock>) => void;
+}) {
+  if (!currentVersion) {
+    return (
+      <section className="panel script-editor">
+        <h2>内容生产表</h2>
+        <Empty description="选择或生成一个脚本版本后开始编辑" />
+      </section>
+    );
+  }
+
+  const titleText = readCandidateText(currentVersion.titleCandidates[0]) || "点击优化生成标题";
+  const descriptionText = currentVersion.description || seoPackage?.descriptionCandidates[0]?.text || "点击优化生成简介";
+  const tagText = currentVersion.tags.length > 0 ? currentVersion.tags.join("，") : seoPackage?.tagCandidates.join("，") || "点击优化生成标签";
+  const seoText = seoPackage?.keywordCoverage.map((item) => item.keyword).join("，") || "点击优化生成 SEO 词";
+
+  return (
+    <section className="panel script-editor script-production">
+      <div className="panel-header script-production-header">
+        <div>
+          <h2>内容生产表</h2>
+          <p className="muted">{currentVersion.label} · 标题、简介、标签、SEO 和口播脚本在一张表里完成。</p>
+        </div>
+        <Tag color="success">预计 {estimatedDuration} 秒</Tag>
+      </div>
+
+      <div className="script-meta-bar">
+        <label>
+          <span>平台</span>
+          <Select
+            aria-label="平台"
+            options={[
+              { value: "douyin", label: "抖音" },
+              { value: "kuaishou", label: "快手" },
+              { value: "xiaohongshu", label: "小红书" },
+              { value: "youtube", label: "YouTube Shorts" },
+              { value: "wechat", label: "视频号" }
+            ]}
+            value={currentVersion.platform ?? "douyin"}
+            disabled
+          />
+        </label>
+        <label>
+          <span>时长</span>
+          <Select
+            aria-label="目标时长"
+            options={[
+              { value: 45, label: "45秒" },
+              { value: 60, label: "60秒" },
+              { value: 90, label: "90秒" }
+            ]}
+            value={nearestDurationOption(estimatedDuration)}
+            disabled
+          />
+        </label>
+      </div>
+
+      <div className="production-table">
+        <ProductionAssetRow label="标题" value={titleText} action="title" loading={loading} onOpenEvidence={onOpenEvidence} onOptimize={onOptimize} />
+        <ProductionAssetRow label="简介" value={descriptionText} action="teleprompter" loading={loading} onOpenEvidence={onOpenEvidence} onOptimize={onOptimize} multiline />
+        <ProductionAssetRow label="标签" value={tagText} action="adapt_xiaohongshu" loading={loading} onOpenEvidence={onOpenEvidence} onOptimize={onOptimize} />
+        <ProductionAssetRow label="SEO词" value={seoText} action="fix_seo" loading={loading} onOpenEvidence={onOpenEvidence} onOptimize={onOptimize} />
+      </div>
+
+      <div className="script-block-list production-script-list">
+        {blocks.map((block, index) => (
+          <article className="production-script-row" key={block.id}>
+            <div className="production-time">
+              <strong>{timeRangeForBlock(blocks, index)}</strong>
+              <Select
+                aria-label="脚本段落类型"
+                options={scriptBlockRoleOptions.map((option) => ({ value: option.role, label: productionRoleLabel[option.role] }))}
+                value={block.role}
+                onChange={(role) => onChangeBlockRole(block.id, role)}
+              />
+            </div>
+            <label className="production-content">
+              <span>{productionRoleLabel[block.role]}</span>
+              <TextArea
+                value={block.voiceover}
+                autoSize={{ minRows: 3, maxRows: 8 }}
+                onChange={(event) => onUpdateBlock(block.id, { voiceover: event.target.value })}
+                placeholder="写这一段要说出口的内容"
+              />
+            </label>
+            <div className="production-actions">
+              <Button size="small" onClick={onOpenEvidence}>
+                证据
+              </Button>
+              <Button size="small" type="primary" ghost loading={loading} onClick={() => void onOptimize(roleOptimizeAction[block.role])}>
+                优化
+              </Button>
+              <div className="production-row-tools">
+                <Button size="small" disabled={index === 0} onClick={() => onMoveBlock(block.id, -1)}>
+                  上移
+                </Button>
+                <Button size="small" disabled={index === blocks.length - 1} onClick={() => onMoveBlock(block.id, 1)}>
+                  下移
+                </Button>
+                <Button size="small" danger disabled={blocks.length <= 1} onClick={() => onRemoveBlock(block.id)}>
+                  删除
+                </Button>
+              </div>
+              <InputNumber
+                aria-label="预计秒数"
+                min={1}
+                max={180}
+                value={block.durationSeconds}
+                onChange={(value) => onUpdateBlock(block.id, { durationSeconds: typeof value === "number" ? value : undefined })}
+              />
+            </div>
+          </article>
+        ))}
+      </div>
+
+      <Button className="page-gap-small" onClick={onAddBlock}>
+        新增段落
+      </Button>
+      <div className="word-count">
+        <span>字数 {charCount}</span>
+        <span>段落 {blocks.length}</span>
+        <span>结构：标题 / 简介 / 标签 / SEO / 开头 / 痛点 / 洞察 / 案例 / 互动</span>
+      </div>
+    </section>
+  );
+}
+
+function ProductionAssetRow({
+  label,
+  value,
+  action,
+  loading,
+  multiline = false,
+  onOpenEvidence,
+  onOptimize
+}: {
+  label: string;
+  value: string;
+  action: ScriptCopilotAction["id"] | "title";
+  loading: boolean;
+  multiline?: boolean;
+  onOpenEvidence: () => void;
+  onOptimize: (actionId: ScriptCopilotAction["id"]) => Promise<void>;
+}) {
+  return (
+    <article className="production-asset-row">
+      <strong>{label}</strong>
+      {multiline ? <TextArea value={value} autoSize={{ minRows: 2, maxRows: 4 }} readOnly /> : <Input value={value} readOnly />}
+      <div className="production-actions">
+        <Button size="small" onClick={onOpenEvidence}>
+          证据
+        </Button>
+        <Button
+          size="small"
+          type="primary"
+          ghost
+          loading={loading}
+          onClick={() => void onOptimize(action === "title" ? "strengthen_hook" : action)}
+        >
+          优化
+        </Button>
+      </div>
+    </article>
+  );
+}
+
+const productionRoleLabel: Record<ScriptBlockRole, string> = {
+  hook: "开头钩子",
+  pain: "痛点共鸣",
+  point: "核心洞察",
+  proof: "案例证明",
+  method: "方法步骤",
+  turn: "反转冲突",
+  summary: "总结收束",
+  cta: "互动引导"
+};
+
+const roleOptimizeAction: Record<ScriptBlockRole, ScriptCopilotAction["id"]> = {
+  hook: "strengthen_hook",
+  pain: "teleprompter",
+  point: "compress_45",
+  proof: "add_case",
+  method: "teleprompter",
+  turn: "strengthen_hook",
+  summary: "compress_45",
+  cta: "fix_cta"
+};
+
+function nearestDurationOption(duration: number) {
+  if (duration <= 52) return 45;
+  if (duration <= 75) return 60;
+  return 90;
+}
+
+function timeRangeForBlock(blocks: ScriptBlock[], index: number) {
+  const start = blocks.slice(0, index).reduce((sum, block) => sum + (block.durationSeconds ?? 0), 0);
+  const current = blocks[index]?.durationSeconds ?? 0;
+  if (current <= 0) return "未估时";
+  return `${start}-${start + current}s`;
+}
+
+function readCandidateText(candidate: Record<string, unknown> | undefined) {
+  if (!candidate) return "";
+  const text = candidate.text ?? candidate.title ?? candidate.value;
+  return typeof text === "string" ? text : "";
+}
+
+function QualityInspector({
+  error,
+  loading,
+  qualityReport,
+  onRunAction
+}: {
+  error: string | null;
+  loading: boolean;
+  qualityReport: ScriptQualityReport | null;
+  onRunAction: (actionId: ScriptCopilotAction["id"]) => Promise<void>;
+}) {
+  return (
+    <aside className="panel quality-inspector">
+      <h2>质检</h2>
+      {error ? <Alert className="page-gap-small" type="error" showIcon message={error} /> : null}
+      <QualityTab loading={loading} report={qualityReport} onRunAction={onRunAction} />
+    </aside>
+  );
+}
+
+function sourceTypeLabel(sourceType?: string) {
+  const labels: Record<string, string> = {
+    ai_initial: "AI 初稿",
+    user_save: "用户保存",
+    ai_rewrite: "AI 改写",
+    platform_adaptation: "平台适配"
+  };
+  return sourceType ? labels[sourceType] ?? sourceType : "未定来源";
+}
+
+function QualityTab({
+  loading,
+  report,
+  onRunAction
+}: {
+  loading: boolean;
+  report: ScriptQualityReport | null;
+  onRunAction: (actionId: ScriptCopilotAction["id"]) => Promise<void>;
+}) {
+  if (!report) {
+    return <Empty description={loading ? "正在生成质检报告" : "暂无质检报告"} />;
+  }
+
+  return (
+    <div className="copilot-tab">
+      <div className="quality-score">
+        <Progress type="circle" percent={report.overallScore} size={76} strokeColor={scoreColor(report.overallScore)} />
+        <div>
+          <strong>综合评分</strong>
+          <p className="muted">{report.summary}</p>
+        </div>
+      </div>
+      <div className="quality-grid">
+        {qualityMetricEntries.map(([key, label]) => (
+          <div className="quality-metric" key={key}>
+            <span>{label}</span>
+            <Progress percent={report.metrics[key]} size="small" strokeColor={scoreColor(report.metrics[key])} />
+          </div>
+        ))}
+      </div>
+      <FixList title="优先修复" fixes={report.mustFix} onRunAction={onRunAction} />
+      <FixList title="可以优化" fixes={report.niceToHave} onRunAction={onRunAction} />
+    </div>
+  );
+}
+
+function FixList({
+  title,
+  fixes,
+  onRunAction
+}: {
+  title: string;
+  fixes: ScriptQualityReport["mustFix"];
+  onRunAction: (actionId: ScriptCopilotAction["id"]) => Promise<void>;
+}) {
+  if (fixes.length === 0) return null;
+  return (
+    <div className="page-gap">
+      <h3>{title}</h3>
+      <div className="evidence-list">
+        {fixes.map((fix) => (
+          <article className="evidence-item" key={fix.id}>
+            <strong>{fix.title}</strong>
+            <p className="muted">{fix.description}</p>
+            <Button onClick={() => void onRunAction(fix.actionId)}>一键修复</Button>
+          </article>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+const qualityMetricEntries: Array<[keyof ScriptQualityReport["metrics"], string]> = [
+  ["persona", "人设匹配"],
+  ["hook", "开头强度"],
+  ["retention", "留存节奏"],
+  ["seo", "SEO/GEO"],
+  ["oral", "口播自然度"],
+  ["risk", "风险表达"],
+  ["conversion", "转化潜力"],
+  ["duration", "时长匹配"]
+];
+
+function estimateScriptDuration(body: string) {
+  return Math.max(15, Math.round(body.replace(/\s/g, "").length / 4));
+}
+
+function scoreColor(score: number) {
+  if (score >= 85) return "#0f766e";
+  if (score >= 70) return "#2563eb";
+  return "#d97706";
 }
 
 export function SeoPage({ onNavigateCalendar }: { onNavigateCalendar: () => void }) {

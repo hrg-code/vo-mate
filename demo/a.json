@@ -1,0 +1,208 @@
+{
+    "task": "topic_content_rerank",
+    "input": "程序员 35 岁危机",
+    "context": {
+        "direction": "程序员 35 岁危机",
+        "goal": "followers",
+        "audience": "25-35 岁普通程序员",
+        "constraints": {
+            "tone": "克制直接",
+            "avoidTopics": [
+                "裁员恐慌"
+            ],
+            "useHotSignals": true,
+            "targetDurationSeconds": 60
+        },
+        "candidates": [
+            {
+                "contentId": "ct_inner_pg_001",
+                "title": "程序员副业接私活真实复盘：第一单到底亏在哪",
+                "description": "围绕程序员副业、接私活和报价失误做真实复盘，评论区集中追问如何避坑。",
+                "tags": [
+                    "程序员",
+                    "副业",
+                    "接私活"
+                ],
+                "keywords": [
+                    "程序员副业",
+                    "接私活报价"
+                ],
+                "matchedTerms": [
+                    "程序员"
+                ],
+                "matchFields": [
+                    "title",
+                    "description",
+                    "tags",
+                    "keywords",
+                    "textAssets"
+                ],
+                "ruleRelevanceLevel": "medium_related",
+                "ruleRelevanceScore": 0.76,
+                "retrievalSource": "keyword",
+                "embeddingScore": null,
+                "score": 94,
+                "views": 186400
+            },
+            {
+                "contentId": "ct_inner_pg_002",
+                "title": "程序员职业成长不是换岗：先把这三个选择排个序",
+                "description": "职业成长方向内容，拆解大厂、外包、独立产品三种路径的短期成本。",
+                "tags": [
+                    "程序员",
+                    "职业成长",
+                    "转型"
+                ],
+                "keywords": [
+                    "程序员职业成长",
+                    "程序员转型"
+                ],
+                "matchedTerms": [
+                    "程序员"
+                ],
+                "matchFields": [
+                    "title",
+                    "tags",
+                    "keywords",
+                    "textAssets"
+                ],
+                "ruleRelevanceLevel": "medium_related",
+                "ruleRelevanceScore": 0.76,
+                "retrievalSource": "keyword",
+                "embeddingScore": null,
+                "score": 90,
+                "views": 142900
+            },
+            {
+                "contentId": "ct_inner_pg_003",
+                "title": "AI 工具帮程序员省时间，但别先买课",
+                "description": "从 AI 编程工具的真实工作流切入，解释什么时候值得投入、什么时候只是换一种焦虑。",
+                "tags": [
+                    "AI",
+                    "程序员效率"
+                ],
+                "keywords": [
+                    "AI 编程工具",
+                    "程序员 AI"
+                ],
+                "matchedTerms": [
+                    "程序员"
+                ],
+                "matchFields": [
+                    "title",
+                    "tags",
+                    "keywords",
+                    "textAssets"
+                ],
+                "ruleRelevanceLevel": "medium_related",
+                "ruleRelevanceScore": 0.76,
+                "retrievalSource": "keyword",
+                "embeddingScore": null,
+                "score": 86,
+                "views": 118600
+            },
+            {
+                "contentId": "ct_inner_pg_004",
+                "title": "程序员简历改了十版，为什么还是没有面试",
+                "description": "职业转型与简历诊断内容，评论区出现大量具体简历问题。",
+                "tags": [
+                    "简历",
+                    "职业成长"
+                ],
+                "keywords": [
+                    "程序员简历",
+                    "没有面试"
+                ],
+                "matchedTerms": [
+                    "程序员"
+                ],
+                "matchFields": [
+                    "title",
+                    "keywords",
+                    "textAssets"
+                ],
+                "ruleRelevanceLevel": "medium_related",
+                "ruleRelevanceScore": 0.76,
+                "retrievalSource": "keyword",
+                "embeddingScore": null,
+                "score": 80,
+                "views": 97300
+            },
+            {
+                "contentId": "ct_inner_pg_005",
+                "title": "别把独立产品做成自我感动：程序员变现前先问这四句",
+                "description": "独立产品和变现方向内容，表现中等但保存率高，可作为搜索承接样本。",
+                "tags": [
+                    "独立产品",
+                    "变现"
+                ],
+                "keywords": [
+                    "独立产品变现",
+                    "程序员变现"
+                ],
+                "matchedTerms": [
+                    "程序员"
+                ],
+                "matchFields": [
+                    "title",
+                    "keywords",
+                    "textAssets"
+                ],
+                "ruleRelevanceLevel": "medium_related",
+                "ruleRelevanceScore": 0.76,
+                "retrievalSource": "keyword",
+                "embeddingScore": null,
+                "score": 76,
+                "views": 75600
+            },
+            {
+                "contentId": "ct_inner_pg_006",
+                "title": "程序员焦虑期不要乱学，先做一张技能现金流表",
+                "description": "职业成长和学习路线内容，完播一般但收藏不错，适合作为避坑反例。",
+                "tags": [
+                    "程序员",
+                    "成长"
+                ],
+                "keywords": [
+                    "程序员焦虑",
+                    "技能成长"
+                ],
+                "matchedTerms": [
+                    "程序员"
+                ],
+                "matchFields": [
+                    "title",
+                    "tags",
+                    "keywords"
+                ],
+                "ruleRelevanceLevel": "medium_related",
+                "ruleRelevanceScore": 0.76,
+                "retrievalSource": "keyword",
+                "embeddingScore": null,
+                "score": 61,
+                "views": 43800
+            }
+        ]
+    },
+    "schema": {
+        "type": "object",
+        "required": [
+            "items"
+        ],
+        "properties": {
+            "items": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "required": [
+                        "contentId",
+                        "relevanceLevel",
+                        "score",
+                        "reason",
+                        "suggestedUse"
+                    ]
+                }
+            }
+        }
+    }
+}

@@ -40,14 +40,13 @@ npm run lint
 
 ## 环境变量
 
-- `VITE_USE_MOCKS`：不设置或不为 `false` 时使用 `src/api/mockData.ts`。
-- `VITE_API_BASE_URL`：真实后端 API 基础地址，默认 `/api/v1`。
+- `VITE_USE_MOCKS`：仅设置为 `true` 时使用 `src/api/mockData.ts`；默认请求真实后端。
+- `VITE_API_BASE_URL`：真实后端 API 基础地址，默认 `/api/v1`，开发环境由 Vite 代理到 `http://127.0.0.1:8001`。
 
 接入 FastAPI 示例：
 
 ```bash
-VITE_USE_MOCKS=false
-VITE_API_BASE_URL=http://localhost:8000/api/v1
+VITE_API_BASE_URL=http://localhost:8001/api/v1
 ```
 
 ## 目录职责

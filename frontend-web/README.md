@@ -43,12 +43,17 @@ UI 基础控件默认使用 Ant Design；项目主题集中维护在 `src/theme.
 
 ## API 接入
 
-默认 `VITE_USE_MOCKS` 不设或不为 `false` 时使用 `src/api/mockData.ts`。
-接入 FastAPI 后可配置：
+默认请求真实 FastAPI 接口，开发环境会把 `/api/*` 代理到 `http://127.0.0.1:8001`。
+需要离线预览时可显式启用 mock：
 
 ```bash
-VITE_USE_MOCKS=false
-VITE_API_BASE_URL=http://localhost:8000/api/v1
+VITE_USE_MOCKS=true
+```
+
+如后端不在默认地址，可配置：
+
+```bash
+VITE_API_BASE_URL=http://localhost:8001/api/v1
 ```
 
 主要 API 分组与架构文档保持一致：

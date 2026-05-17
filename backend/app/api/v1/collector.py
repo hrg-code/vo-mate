@@ -3,7 +3,8 @@ from typing import Any, Dict, List
 from fastapi import APIRouter, HTTPException
 
 from app.repositories.memory_store import repository
-from app.schemas.common import AgentTask
+from app.schemas.common import AgentTask, CollectorImportRequest, CollectorImportResponse
+from app.services.content_ingestion_service import content_ingestion_service
 
 router = APIRouter(prefix="/collector", tags=["collector"])
 
@@ -27,8 +28,8 @@ def get_collector_task(task_id: str) -> AgentTask:
 
 
 @router.post("/upload")
-def upload_collected_data(payload: Dict[str, Any]) -> Dict[str, Any]:
-    raw = repository.add_raw_upload(payload)
+async def upload_collected_data(payload: Dict[str, Any]) -> Dict[str, Any]:
+    raw = await content_ingestion_service.upload_raw(payload)
     task = repository.create_task("etl", {"rawId": raw["id"]})
     return {"rawId": raw["id"], "taskId": task.id, "status": "accepted"}
 
@@ -39,6 +40,5 @@ def list_collector_logs() -> List[Dict[str, Any]]:
 
 
 @router.post("/import")
-def import_raw_data(payload: Dict[str, Any]) -> Dict[str, str]:
-    task = repository.create_task("raw-import", payload)
-    return {"taskId": task.id, "status": task.status.value}
+async def import_raw_data(payload: CollectorImportRequest) -> CollectorImportResponse:
+    return await content_ingestion_service.import_raw_data(payload)

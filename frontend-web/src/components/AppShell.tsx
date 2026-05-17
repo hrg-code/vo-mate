@@ -14,7 +14,7 @@ import {
   Workflow
 } from "lucide-react";
 import { Avatar, Button, Input, Select, Tooltip } from "antd";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import type { RouteId, WorkspaceContext } from "../types";
 
 const navItems: Array<{ id: RouteId; label: string; icon: ReactNode }> = [
@@ -42,34 +42,47 @@ export function AppShell({
   children: ReactNode;
   onNavigate: (route: RouteId) => void;
 }) {
+  const [navCollapsed, setNavCollapsed] = useState(false);
+
   return (
-    <div className="app-shell">
+    <div className={`app-shell ${navCollapsed ? "nav-collapsed" : ""}`}>
       <aside className="side-nav" aria-label="主导航">
         <div className="brand">
-          <div className="brand-mark">VO</div>
+          <Tooltip placement="right" title={navCollapsed ? "展开导航" : "折叠导航"}>
+            <button
+              aria-label={navCollapsed ? "展开导航" : "折叠导航"}
+              className="brand-mark"
+              onClick={() => setNavCollapsed((current) => !current)}
+              type="button"
+            >
+              VO
+            </button>
+          </Tooltip>
           <div>
             <strong>VO Mate</strong>
-            <span>AI Creator Workbench</span>
           </div>
         </div>
         <nav className="nav-list">
           {navItems.map((item) => (
-            <Button
-              className={`nav-item ${item.id === activeRoute ? "active" : ""}`}
-              htmlType="button"
-              key={item.id}
-              onClick={() => onNavigate(item.id)}
-            >
-              <span className="nav-icon" aria-hidden="true">
-                {item.icon}
-              </span>
-              <span>{item.label}</span>
-            </Button>
+            <Tooltip key={item.id} placement="right" title={item.label}>
+              <Button
+                aria-label={item.label}
+                className={`nav-item ${item.id === activeRoute ? "active" : ""}`}
+                htmlType="button"
+                onClick={() => onNavigate(item.id)}
+                title={item.label}
+              >
+                <span className="nav-icon" aria-hidden="true">
+                  {item.icon}
+                </span>
+                <span className="nav-label">{item.label}</span>
+              </Button>
+            </Tooltip>
           ))}
         </nav>
         <div className="collector-pill">
           <span className="status-dot" />
-          <div>
+          <div className="collector-copy">
             <strong>采集端在线</strong>
             <span>3 个任务运行中</span>
           </div>

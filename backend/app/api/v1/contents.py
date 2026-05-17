@@ -2,20 +2,24 @@ from typing import Dict, List
 
 from fastapi import APIRouter, HTTPException
 
+from app.repositories.content_item_repository import content_item_repository
 from app.repositories.memory_store import repository
-from app.schemas.common import ContentItem
+from app.schemas.common import ContentAsrResponse, ContentItem
 
 router = APIRouter(prefix="/contents", tags=["contents"])
 
 
 @router.get("", response_model=List[ContentItem])
 def list_contents() -> List[ContentItem]:
+    contents = content_item_repository.list_contents()
+    if contents:
+        return contents
     return repository.contents
 
 
 @router.get("/{content_id}", response_model=ContentItem)
 def get_content(content_id: str) -> ContentItem:
-    content = repository.get_content(content_id)
+    content = content_item_repository.get_content(content_id) or repository.get_content(content_id)
     if content is None:
         raise HTTPException(status_code=404, detail="Content not found")
     return content
@@ -45,9 +49,12 @@ def get_content_analysis(content_id: str) -> Dict[str, object]:
     }
 
 
-@router.get("/{content_id}/asr")
-def get_content_asr(content_id: str) -> Dict[str, str]:
+@router.get("/{content_id}/asr", response_model=ContentAsrResponse)
+def get_content_asr(content_id: str) -> ContentAsrResponse:
+    asr = content_item_repository.get_asr(content_id)
+    if asr is not None:
+        return ContentAsrResponse(**asr)
     content = get_content(content_id)
     if not content.has_asr:
         raise HTTPException(status_code=404, detail="ASR transcript not found")
-    return {"contentId": content.id, "text": "这里是样例 ASR 文本。后续可接入 douyin_video_asr_results 原始集合。"}
+    return ContentAsrResponse(content_id=content.id, text="这里是样例 ASR 文本。后续可接入 douyin_video_asr_results 原始集合。")

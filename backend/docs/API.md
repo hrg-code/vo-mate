@@ -80,7 +80,7 @@ http://localhost:8000/admin
 - 默认不自动创建表：`VO_MATE_SQLADMIN_AUTO_CREATE_TABLES=false`。
 - 默认启用后台登录认证：`VO_MATE_SQLADMIN_AUTH_ENABLED=true`。
 - 后台角色：`owner` 可删除，`admin` 可新增和编辑但不可删除，`viewer` 只读。
-- 当前已注册管理视图：`workspaces`、`users`、`workspace_members`、`platform_accounts`、`content_items`、`topic_ideas`、`ai_generations`、`script_drafts`、`publish_plans`、`memory_patterns`、`collector_tasks`。
+- 当前已注册管理视图：`workspaces`、`users`、`workspace_members`、`platform_accounts`、`content_items`、`content_lifetime_metrics`、`content_text_assets`、`content_tags`、`content_keywords`、`content_traffic_sources`、`topic_ideas`、`ai_generations`、`script_drafts`、`script_draft_versions`、`publish_plans`、`memory_patterns`、`collector_tasks`。
 
 ### 1.5 响应格式
 
@@ -466,11 +466,110 @@ published | needs_review | script_reusable | seo_opportunity
 ```json
 {
   "contentId": "ct_7585913482206383412",
-  "text": "这里是样例 ASR 文本。后续可接入 douyin_video_asr_results 原始集合。"
+  "text": "完整 ASR 文本",
+  "language": "zh",
+  "durationSeconds": 60,
+  "segments": [
+    {
+      "start": 0.0,
+      "end": 2.19,
+      "text": "程序员能干一辈子吗？"
+    }
+  ]
 }
 ```
 
-## 8. AI
+## 8. Scripts
+
+### GET /api/v1/scripts
+
+说明：获取脚本草稿列表，包含当前版本摘要。PostgreSQL 已配置且执行过 `backend/docs/schema/script_drafts.sql` 时优先读取数据库，否则使用内存仓库。
+
+响应：`ScriptDraftSummary[]`
+
+### GET /api/v1/scripts/{draft_id}
+
+说明：获取单个脚本草稿详情、版本列表和当前打开版本。
+
+响应：
+
+```json
+{
+  "id": "scr_xxx",
+  "workspaceId": "ws_northstar",
+  "topicIdeaId": "tp_role_shift",
+  "title": "35 岁程序员不是危机，是岗位切换信号",
+  "body": "当前版本正文",
+  "platform": "douyin",
+  "status": "draft",
+  "currentVersionId": "sv_xxx",
+  "adoptedVersionId": null,
+  "currentVersion": {
+    "id": "sv_xxx",
+    "draftId": "scr_xxx",
+    "versionNo": 1,
+    "label": "v1 AI 初稿",
+    "sourceType": "ai_initial",
+    "generationId": "gen_xxx",
+    "status": "candidate",
+    "body": "脚本正文"
+  },
+  "versions": []
+}
+```
+
+### POST /api/v1/scripts
+
+说明：从选题或手动主题创建脚本草稿，并创建 `v1 AI 初稿`。该接口会调用现有 AI Provider 的脚本生成能力，并记录 `ai_generations` 审计记录。
+
+请求体：
+
+```json
+{
+  "workspaceId": "ws_northstar",
+  "topicIdeaId": "tp_role_shift",
+  "topic": "35 岁程序员不是危机，是岗位切换信号",
+  "platform": "douyin",
+  "durationSeconds": 60
+}
+```
+
+### POST /api/v1/scripts/{draft_id}/versions
+
+说明：基于当前编辑正文保存一个新版本。用户手动保存不会强制创建 AI 生成审计记录，`generationId` 可为空。
+
+请求体：
+
+```json
+{
+  "body": "用户修改后的脚本正文",
+  "label": "v2 用户修改",
+  "sourceType": "user_save",
+  "parentVersionId": "sv_parent"
+}
+```
+
+### PATCH /api/v1/scripts/{draft_id}/versions/{version_id}/status
+
+说明：标记版本状态。`status=adopted` 时同步更新草稿的 `adoptedVersionId`。
+
+请求体：
+
+```json
+{"status": "adopted"}
+```
+
+### PATCH /api/v1/scripts/{draft_id}/current-version
+
+说明：切换脚本工作台当前打开版本，并同步 `script_drafts.body` 为该版本正文镜像。
+
+请求体：
+
+```json
+{"versionId": "sv_xxx"}
+```
+
+## 9. AI
 
 ### GET /api/v1/ai/topic-ideas
 
@@ -480,11 +579,13 @@ published | needs_review | script_reusable | seo_opportunity
 
 ### POST /api/v1/ai/topic-ideas
 
-说明：直接生成 AI 选题候选，并以 SSE 流式返回结果。该接口不再创建后台任务，也不需要前端轮询任务状态。当前 MVP 会通过现有记忆检索边界和 AI Provider 生成不少于 `count` 个候选；未配置真实模型时使用稳定 mock provider。
+说明：直接生成 AI 选题候选，并以 SSE 流式返回结果。该接口不再创建后台任务，也不需要前端轮询任务状态。该生成链路采用真实依赖 fail-closed 策略：必须配置 `VO_MATE_LLM_PROVIDER=deepseek`、`VO_MATE_DEEPSEEK_API_KEY`、PostgreSQL 连接、workspace/account、真实内容证据、真实长期记忆，以及 `topic_ideas` / `ai_generations` 表。任何必需依赖缺失都会返回 SSE `error` 事件，不再降级到 mock provider 或内存样例。
 
-持久化：如果 PostgreSQL 已配置且执行过 `backend/docs/schema/topic_ideas.sql`，接口会保存 `topic_ideas` 和 `ai_generations` 审计记录；如果 PostgreSQL 未配置或表尚未准备好，会降级到内存仓库。
+持久化：接口必须写入 PostgreSQL `topic_ideas` 和 `ai_generations` 审计记录。PostgreSQL 未配置、表未创建或写入失败时，本次生成失败；不会写入内存仓库。
 
-证据来源：接口会优先使用 Milvus 向量索引 `vo_mate_agent_memories` 召回记忆 ID，并从 PostgreSQL `agent_memory_records` 或内存记忆仓库回查证据字段；如果 Milvus 未配置、查询失败或没有可用记录，会回退到 PostgreSQL 标准层的 `content_items` 和 `agent_memory_records` 关键词召回；如果 PostgreSQL 也不可用，会自动回退到内存样例数据和现有记忆检索边界。审计记录的 `inputPayload.dataSourceMode` 会标记为 `milvus`、`postgres` 或 `memory_fallback`。
+证据来源：接口会先按 workspace、account、platform 和 published 状态读取 PostgreSQL 分层内容证据，生成上下文包含 `relatedContents`、`topPerformers`、`contrastContents` 和 `retrievalDiagnostics`。如果精确账号下没有真实内容证据，接口失败，不再混入 `platform_account_id IS NULL` 的旧数据，也不再读取内存样例。Milvus / DashScope 向量检索是可选增强：只有 `VO_MATE_MILVUS_HOST`、`VO_MATE_EMBEDDING_PROVIDER=dashscope`、`VO_MATE_DASHSCOPE_API_KEY` 同时配置时才会参与内容和记忆向量召回；否则跳过向量路径，并使用 PostgreSQL `agent_memory_records` 关键词召回真实记忆。审计记录的 `inputPayload.dataSourceMode` 只应出现 `milvus`、`postgres` 或 `postgres_no_vector`。
+
+内测数据：本地或内测库可执行 `backend/docs/schema/topic_ideas_dev_seed.sql` 写入 `ws_northstar` / `douyin_demo` 的 workspace、账号、历史内容、语义富化和长期记忆，用于跑通该接口的真实 PostgreSQL 证据链。
 
 请求体：
 
@@ -511,13 +612,13 @@ published | needs_review | script_reusable | seo_opportunity
 
 ```text
 event: start
-data: {"workflow":"topic-ideas","generationId":"gen_xxx","promptVersion":"v0.1","acceptedPayload":{...}}
+data: {"workflow":"topic-ideas","generationId":"gen_xxx","promptVersion":"v0.2","providerDiagnostics":{"llmProvider":"deepseek","deepseekKeyConfigured":true,"embeddingProvider":"dashscope",...},"acceptedPayload":{...}}
 
 event: progress
-data: {"step":"load_content_metrics","message":"已读取历史内容表现摘要。"}
+data: {"step":"load_topic_content_evidence","message":"已读取分层历史内容证据。"}
 
 event: evidence
-data: {"items":[{"memoryId":"mem_case_demo","memoryType":"content_case",...}]}
+data: {"items":[{"memoryId":"mem_pg_1","memoryType":"content_case","sourceType":"postgres_memory",...}]}
 
 event: topic_idea
 data: {"id":"tp_role_shift","title":"35 岁程序员不是危机，是岗位切换信号","recommendReason":"...",...}
@@ -557,9 +658,43 @@ data: {"generationId":"gen_xxx","code":"LLM_TIMEOUT","message":"选题生成超�
 
 ### GET /api/v1/ai/evidence
 
-说明：获取 AI 建议的证据列表。该接口已对齐前端 `api.getEvidence()`。
+说明：获取 AI 建议依据列表。该接口已对齐前端 `api.getEvidence()` 和 Evidence Drawer，可按生成记录查看某次选题生成实际依据，也可按当前 workspace/account/platform/direction 预览 PostgreSQL 证据池。
+
+Query：
+
+```text
+generationId  可选；传入后优先按 ai_generations 审计记录返回本次生成依据
+workspaceId   可选；默认 ws_northstar
+accountId     可选；默认 douyin_demo
+platform      可选；默认 douyin
+direction     可选；传入后召回方向相关内容和记忆
+limit         可选；默认 20，范围 1-100
+```
+
+行为：
+
+- `generationId` 有值时，忽略其他实时查询条件；从 `ai_generations` 的输入、输出和 evidence ids 聚合 UI 友好依据。
+- `generationId` 无值但有查询条件时，读取 PostgreSQL 内容证据和 active 长期记忆。
+- 无查询参数时，使用默认 `ws_northstar` / `douyin_demo` / `douyin` / `程序员职业成长` 查询真实 PostgreSQL 证据。
+- PostgreSQL 证据不可用或为空时返回错误，不返回 mock 或内存样例。
 
 响应：`EvidenceItem[]`
+
+```json
+[
+  {
+    "id": "ct_inner_pg_001",
+    "type": "content",
+    "title": "程序员副业接私活真实复盘：第一单到底亏在哪",
+    "description": "命中当前方向相关词：程序员, 副业",
+    "source": "postgres_content",
+    "score": 94,
+    "metrics": ["播放 186400", "完播率 46%"],
+    "action": "当前方向相关历史内容"
+  }
+]
+```
+
 
 ### POST /api/v1/ai/{workflow}
 
@@ -782,14 +917,18 @@ script | title | seo | review-content | video-retrospective | multi-platform-rew
 
 ### POST /api/v1/collector/import
 
-说明：创建历史 Raw 数据导入任务。
+说明：同步触发一轮历史 Raw 数据导入。当前 MVP 支持 `douyin_video_raw`，会从 MongoDB Raw 集合读取文档，标准化后 upsert 到 PostgreSQL `content_items`、`content_lifetime_metrics`、`content_text_assets`、`content_tags`、`content_keywords` 和 `content_traffic_sources`。启用前需手动执行 `backend/docs/schema/content_ingestion.sql` 和 `backend/docs/schema/content_enrichment.sql`；未配置 MongoDB 或 PostgreSQL 时会返回失败统计，不影响服务启动。
 
 请求体：
 
 ```json
 {
-  "source": "mongodb",
+ "workspaceId": "ws_northstar",
+  "accountId": "douyin_demo",
+  "platform": "douyin",
   "collection": "douyin_video_raw",
+  "asrCollection": "douyin_video_asr_results",
+  "includeAsr": true,
   "limit": 100
 }
 ```
@@ -799,7 +938,15 @@ script | title | seo | review-content | video-retrospective | multi-platform-rew
 ```json
 {
   "taskId": "task_raw-import_xxxxxxxx",
-  "status": "pending"
+  "status": "succeeded",
+  "processedCount": 100,
+  "upsertedCount": 100,
+  "failedCount": 0,
+  "textAssetCount": 300,
+  "tagCount": 120,
+  "keywordCount": 80,
+  "trafficSourceCount": 0,
+  "asrCount": 100
 }
 ```
 
@@ -809,7 +956,7 @@ script | title | seo | review-content | video-retrospective | multi-platform-rew
 
 ### 12.1 Provider 配置
 
-服务端支持 DeepSeek Chat Provider 和阿里云 DashScope Embedding Provider。未配置密钥时使用 mock provider，便于本地开发和测试。
+服务端支持 DeepSeek Chat Provider 和阿里云 DashScope Embedding Provider。除 `POST /api/v1/ai/topic-ideas` 外，未配置密钥时可使用 mock provider 便于本地开发和测试；选题生成接口要求真实 DeepSeek 和 PostgreSQL 证据。
 
 ```env
 VO_MATE_LLM_PROVIDER="deepseek"

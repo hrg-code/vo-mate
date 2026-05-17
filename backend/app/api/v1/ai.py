@@ -1,11 +1,12 @@
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from starlette.responses import StreamingResponse
 
 from app.repositories.memory_store import repository
 from app.repositories.topic_idea_repository import topic_idea_repository
-from app.schemas.common import AgentTask, AIGenerationRecord, EvidenceItem, TopicIdea, TopicIdeaGenerateRequest
+from app.schemas.common import AgentTask, AIGenerationRecord, EvidenceItem, Platform, TopicIdea, TopicIdeaGenerateRequest
+from app.services.ai_evidence_service import ai_evidence_service
 from app.services.topic_idea_service import topic_idea_service
 
 router = APIRouter(prefix="/ai", tags=["ai"])
@@ -33,8 +34,28 @@ def get_ai_generation(generation_id: str) -> AIGenerationRecord:
 
 
 @router.get("/evidence", response_model=List[EvidenceItem])
-def list_evidence() -> List[EvidenceItem]:
-    return repository.evidence
+def list_evidence(
+    generation_id: Optional[str] = Query(default=None, alias="generationId"),
+    workspace_id: Optional[str] = Query(default=None, alias="workspaceId"),
+    account_id: Optional[str] = Query(default=None, alias="accountId"),
+    platform: Optional[Platform] = None,
+    direction: Optional[str] = None,
+    limit: int = Query(default=20, ge=1, le=100),
+) -> List[EvidenceItem]:
+    try:
+        items = ai_evidence_service.list_evidence(
+            generation_id=generation_id,
+            workspace_id=workspace_id,
+            account_id=account_id,
+            platform=platform,
+            direction=direction,
+            limit=limit,
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    if items is None:
+        raise HTTPException(status_code=404, detail="AI generation not found")
+    return items
 
 
 @router.post("/{workflow}", response_model=AgentTask)

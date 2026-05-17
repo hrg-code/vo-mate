@@ -62,9 +62,16 @@ class ContentItem(Base, TimestampMixin):
     platform: Mapped[str] = mapped_column(String(32), index=True)
     external_content_id: Mapped[Optional[str]] = mapped_column(String(255), index=True)
     title: Mapped[str] = mapped_column(String(500), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String(64), default="published")
     published_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), index=True)
     duration_seconds: Mapped[Optional[int]] = mapped_column(Integer)
+    content_type: Mapped[Optional[str]] = mapped_column(String(64))
+    cover_url: Mapped[Optional[str]] = mapped_column(Text)
+    video_url: Mapped[Optional[str]] = mapped_column(Text)
+    topic_cluster_id: Mapped[Optional[str]] = mapped_column(String(64), index=True)
+    raw_collection: Mapped[Optional[str]] = mapped_column(String(128))
+    raw_document_id: Mapped[Optional[str]] = mapped_column(String(255), index=True)
     views: Mapped[int] = mapped_column(Integer, default=0)
     likes: Mapped[int] = mapped_column(Integer, default=0)
     comments: Mapped[int] = mapped_column(Integer, default=0)
@@ -75,6 +82,79 @@ class ContentItem(Base, TimestampMixin):
     score: Mapped[Optional[float]] = mapped_column(Float)
     has_asr: Mapped[bool] = mapped_column(Boolean, default=False)
     reviewed: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class ContentLifetimeMetric(Base):
+    __tablename__ = "content_lifetime_metrics"
+
+    content_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    play_count: Mapped[int] = mapped_column(Integer, default=0)
+    like_count: Mapped[int] = mapped_column(Integer, default=0)
+    comment_count: Mapped[int] = mapped_column(Integer, default=0)
+    share_count: Mapped[int] = mapped_column(Integer, default=0)
+    collect_count: Mapped[int] = mapped_column(Integer, default=0)
+    follow_count: Mapped[int] = mapped_column(Integer, default=0)
+    profile_visit_count: Mapped[int] = mapped_column(Integer, default=0)
+    avg_view_duration: Mapped[Optional[float]] = mapped_column(Float)
+    avg_view_percent: Mapped[Optional[float]] = mapped_column(Float)
+    finish_rate: Mapped[Optional[float]] = mapped_column(Float)
+    five_second_retention: Mapped[Optional[float]] = mapped_column(Float)
+    bounce_rate: Mapped[Optional[float]] = mapped_column(Float)
+    negative_feedback_count: Mapped[int] = mapped_column(Integer, default=0)
+    metric_score: Mapped[Optional[float]] = mapped_column(Float)
+    raw_document_id: Mapped[Optional[str]] = mapped_column(String(255), index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class ContentTextAsset(Base, TimestampMixin):
+    __tablename__ = "content_text_assets"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    content_id: Mapped[str] = mapped_column(String(64), index=True)
+    asset_type: Mapped[str] = mapped_column(String(64), index=True)
+    text: Mapped[str] = mapped_column(Text, default="")
+    language: Mapped[Optional[str]] = mapped_column(String(32))
+    segments: Mapped[list] = mapped_column(JSON, default=list)
+    raw_collection: Mapped[Optional[str]] = mapped_column(String(128))
+    raw_document_id: Mapped[Optional[str]] = mapped_column(String(255), index=True)
+    source: Mapped[Optional[str]] = mapped_column(String(128), index=True)
+
+
+class ContentTag(Base, TimestampMixin):
+    __tablename__ = "content_tags"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    content_id: Mapped[str] = mapped_column(String(64), index=True)
+    tag: Mapped[str] = mapped_column(String(255), index=True)
+    tag_type: Mapped[str] = mapped_column(String(64), default="topic")
+    external_tag_id: Mapped[Optional[str]] = mapped_column(String(255), index=True)
+    source: Mapped[Optional[str]] = mapped_column(String(128), index=True)
+    position_start: Mapped[Optional[int]] = mapped_column(Integer)
+    position_end: Mapped[Optional[int]] = mapped_column(Integer)
+
+
+class ContentKeyword(Base, TimestampMixin):
+    __tablename__ = "content_keywords"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    content_id: Mapped[str] = mapped_column(String(64), index=True)
+    keyword: Mapped[str] = mapped_column(String(255), index=True)
+    keyword_type: Mapped[str] = mapped_column(String(64), default="search")
+    score: Mapped[Optional[float]] = mapped_column(Float)
+    query_count_7d: Mapped[Optional[int]] = mapped_column(Integer)
+    source: Mapped[Optional[str]] = mapped_column(String(128), index=True)
+
+
+class ContentTrafficSource(Base, TimestampMixin):
+    __tablename__ = "content_traffic_sources"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    content_id: Mapped[str] = mapped_column(String(64), index=True)
+    source_name: Mapped[str] = mapped_column(String(255), index=True)
+    source_type: Mapped[str] = mapped_column(String(64), default="traffic")
+    ratio: Mapped[Optional[float]] = mapped_column(Float)
+    count: Mapped[Optional[int]] = mapped_column(Integer)
+    raw_payload: Mapped[dict] = mapped_column(JSON, default=dict)
 
 
 class TopicIdea(Base, TimestampMixin):
@@ -130,6 +210,27 @@ class ScriptDraft(Base, TimestampMixin):
     body: Mapped[Optional[str]] = mapped_column(Text)
     platform: Mapped[Optional[str]] = mapped_column(String(32))
     status: Mapped[str] = mapped_column(String(64), default="draft")
+    current_version_id: Mapped[Optional[str]] = mapped_column(String(64), index=True)
+    adopted_version_id: Mapped[Optional[str]] = mapped_column(String(64), index=True)
+
+
+class ScriptDraftVersion(Base, TimestampMixin):
+    __tablename__ = "script_draft_versions"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    draft_id: Mapped[str] = mapped_column(String(64), index=True)
+    version_no: Mapped[int] = mapped_column(Integer, default=1)
+    label: Mapped[str] = mapped_column(String(255), nullable=False)
+    platform: Mapped[Optional[str]] = mapped_column(String(32))
+    duration_seconds: Mapped[Optional[int]] = mapped_column(Integer)
+    body: Mapped[str] = mapped_column(Text, default="")
+    description: Mapped[Optional[str]] = mapped_column(Text)
+    tags: Mapped[list] = mapped_column(JSON, default=list)
+    title_candidates: Mapped[list] = mapped_column(JSON, default=list)
+    source_type: Mapped[str] = mapped_column(String(64), default="user_save", index=True)
+    parent_version_id: Mapped[Optional[str]] = mapped_column(String(64), index=True)
+    generation_id: Mapped[Optional[str]] = mapped_column(String(64), index=True)
+    status: Mapped[str] = mapped_column(String(64), default="candidate", index=True)
 
 
 class PublishPlan(Base, TimestampMixin):
